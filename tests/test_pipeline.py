@@ -81,6 +81,27 @@ def test_parse_package_merges_pkgbuild_and_install_scripts(tmp_path: Path) -> No
     assert not any(path.startswith(".git/") for path in result.cloned_files)
 
 
+def test_parse_package_expands_pkgname_in_install_filename(tmp_path: Path) -> None:
+    source = """\
+pkgname=google-chrome
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+install=$pkgname.install
+"""
+    repo = _make_repo(
+        tmp_path / "source",
+        {"PKGBUILD": source, "google-chrome.install": INSTALL},
+    )
+
+    result = parse_package("google-chrome", _git_url=repo.as_uri())
+
+    assert result.errors == []
+    assert [script.filename for script in result.install_scripts] == [
+        "google-chrome.install"
+    ]
+
+
 def test_parse_package_reports_missing_install_file(tmp_path: Path) -> None:
     source = PKGBUILD.replace("install=demo.install", "install=missing.install")
     repo = _make_repo(tmp_path / "source", {"PKGBUILD": source})

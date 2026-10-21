@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from aurscan.clone import DEFAULT_TIMEOUT_SECONDS, clone_package
 from aurscan.errors import AurscanError
 from aurscan.models import ParseResult
 from aurscan.parse import parse_install_script, parse_pkgbuild
 from aurscan.safepaths import iter_regular_files, read_text_safe
+from aurscan.shell import expand_variables
 from aurscan.validation import validate_package_name
 
 PKGBUILD_FILENAME = "PKGBUILD"
@@ -102,9 +103,13 @@ def _install_candidates(
 ) -> list[str]:
     """Return install-script paths: the declared file plus top-level ``*.install``."""
     candidates: list[str] = []
-    declared = result.pkgbuild.install if result.pkgbuild is not None else None
-    if declared:
-        candidates.append(declared)
+    pkgbuild = result.pkgbuild
+    if pkgbuild is not None and pkgbuild.install:
+        declared = PurePosixPath(
+            expand_variables(pkgbuild.install, pkgbuild.variables)
+        ).as_posix()
+        if declared and declared != ".":
+            candidates.append(declared)
 
     root = clone_dir.resolve()
     for path in files:
