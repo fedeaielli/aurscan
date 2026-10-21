@@ -1,0 +1,163 @@
+"""dir_fd-anchored, symlink-refusing file access inside a clone."""
+
+from __future__ import annotations
+
+import os
+import stat
+from collections.abc import Iterator
+from pathlib import Path, PurePosixPath
+from typing import Literal
+
+from aurscan.errors import BinaryFileError, FileTooLargeError, SafetyError, UnsafePathError
+
+MAX_TEXT_BYTES = 1024 * 1024
+_MAX_ENTRIES = 10_000
+
+_EntryKind = Literal["file", "dir", "symlink", "other"]
+
+
+def resolve_within(root: Path, relative: str) -> Path:
+    """Resolve ``relative`` under ``root`` without allowing ``..`` or symlinks."""
+    root_path = _root_path(root)
+    parts = _relative_parts(relative)
+    dir_fd = _open_root_dir(root_path)
+    try:
+        for part in parts[:-1]:
+            next_fd = _open_dir_at(dir_fd, part, relative)
+            os.close(dir_fd)
+            dir_fd = next_fd
+        try:
+            info = os.stat(parts[-1], dir_fd=dir_fd, follow_symlinks=False)
+        except OSError as exc:
+            raise UnsafePathError(f"path does not exist: {relative!r}") from exc
+        if stat.S_ISLNK(info.st_mode):
+            raise UnsafePathError(f"symlink not allowed: {relative!r}")
+    finally:
+        os.close(dir_fd)
+    return root_path.joinpath(*parts)
+
+
+def read_text_safe(
+    root: Path,
+    relative: str,
+    *,
+    max_bytes: int = MAX_TEXT_BYTES,
+) -> str:
+    """Read a regular UTF-8 file under ``root`` without following symlinks."""
+    root_path = _root_path(root)
+    parts = _relative_parts(relative)
+    dir_fd = _open_root_dir(root_path)
+    try:
+        for part in parts[:-1]:
+            next_fd = _open_dir_at(dir_fd, part, relative)
+            os.close(dir_fd)
+            dir_fd = next_fd
+        try:
+            file_fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dir_fd)
+        except OSError as exc:
+            raise UnsafePathError(f"cannot open path safely: {relative!r}") from exc
+    finally:
+        os.close(dir_fd)
+
+    try:
+        info = os.fstat(file_fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise UnsafePathError(f"not a regular file: {relative!r}")
+        if info.st_size > max_bytes:
+            raise FileTooLargeError(f"file exceeds {max_bytes} bytes: {relative!r}")
+        data = _read_limited(file_fd, max_bytes=max_bytes, relative=relative)
+    finally:
+        os.close(file_fd)
+
+    if len(data) > max_bytes:
+        raise FileTooLargeError(f"file exceeds {max_bytes} bytes: {relative!r}")
+    if b"\x00" in data:
+        raise BinaryFileError(f"binary file: {relative!r}")
+    return data.decode("utf-8", errors="replace")
+
+
+def iter_regular_files(root: Path, *, max_entries: int = _MAX_ENTRIES) -> Iterator[Path]:
+    """Yield regular files under ``root``, never following symlinks."""
+    for path, kind in _walk(root, max_entries=max_entries):
+        if kind == "file":
+            yield path
+
+
+def list_symlinks(root: Path, *, max_entries: int = _MAX_ENTRIES) -> list[Path]:
+    """Return symlink paths under ``root`` without following them."""
+    return [path for path, kind in _walk(root, max_entries=max_entries) if kind == "symlink"]
+
+
+def _walk(root: Path, *, max_entries: int) -> Iterator[tuple[Path, _EntryKind]]:
+    root_path = _root_path(root)
+    stack = [root_path]
+    seen = 0
+    while stack:
+        try:
+            with os.scandir(stack.pop()) as entries:
+                for entry in entries:
+                    seen += 1
+                    if seen > max_entries:
+                        raise SafetyError(f"more than {max_entries} entries under {root_path}")
+                    try:
+                        if entry.is_symlink():
+                            yield Path(entry.path), "symlink"
+                        elif entry.is_dir(follow_symlinks=False):
+                            stack.append(Path(entry.path))
+                            yield Path(entry.path), "dir"
+                        elif entry.is_file(follow_symlinks=False):
+                            yield Path(entry.path), "file"
+                        else:
+                            yield Path(entry.path), "other"
+                    except OSError as exc:
+                        raise SafetyError(f"cannot inspect entry: {entry.path}") from exc
+        except OSError as exc:
+            raise SafetyError(f"cannot read directory: {root_path}") from exc
+
+
+def _root_path(root: Path) -> Path:
+    try:
+        root_path = Path(root).resolve(strict=True)
+    except OSError as exc:
+        raise UnsafePathError(f"root does not exist: {root}") from exc
+    if not root_path.is_dir():
+        raise UnsafePathError(f"root is not a directory: {root}")
+    return root_path
+
+
+def _open_root_dir(root: Path) -> int:
+    try:
+        return os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError as exc:
+        raise UnsafePathError(f"cannot open root safely: {root}") from exc
+
+
+def _open_dir_at(dir_fd: int, part: str, relative: str) -> int:
+    try:
+        return os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=dir_fd)
+    except OSError as exc:
+        raise UnsafePathError(f"cannot traverse path safely: {relative!r}") from exc
+
+
+def _relative_parts(relative: str) -> tuple[str, ...]:
+    if "\x00" in relative:
+        raise UnsafePathError("path contains NUL byte")
+    pure = PurePosixPath(relative)
+    if pure.is_absolute():
+        raise UnsafePathError(f"absolute path not allowed: {relative!r}")
+    parts = pure.parts
+    if not parts or any(part in ("", "..") for part in parts):
+        raise UnsafePathError(f"path escapes root: {relative!r}")
+    return parts
+
+
+def _read_limited(file_fd: int, *, max_bytes: int, relative: str) -> bytes:
+    chunks: list[bytes] = []
+    remaining = max_bytes + 1
+    while remaining > 0:
+        chunk = os.read(file_fd, min(65536, remaining))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)

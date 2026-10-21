@@ -1,0 +1,10 @@
+max_score: 100
+weights:
+  info: 0
+  low: 2
+  medium: 8
+  high: 20
+  critical: 40
+thresholds:
+  review: 20
+  risky: 60
