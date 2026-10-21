@@ -16,8 +16,11 @@ import aurscan.cli as cli
 from aurscan.errors import HistoryError
 from aurscan.fetch import RPC_URL
 from aurscan.history import Commit
-from aurscan.models import ParseResult
+from aurscan.models import ParseResult, Report
 from aurscan.parse import parse_install_script, parse_pkgbuild
+from aurscan.report import build_report
+from aurscan.rules import RuleContext, registry
+from tests.rules_utils import make_meta
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -338,3 +341,156 @@ def test_history_failure_is_an_analysis_note(
     out = capsys.readouterr().out
     assert "Analysis notes" in out
     assert "history analysis failed: git log failed" in out
+
+
+def _dep_report(name: str, source: str, parent: str) -> Report:
+    meta = make_meta(name=name)
+    parsed = parse_pkgbuild(source)
+    context = RuleContext(
+        pkgbuild=parsed.pkgbuild,
+        install_scripts=(),
+        meta=meta,
+    )
+    report = build_report(meta, parsed, registry.run_all(context))
+    return report.model_copy(update={"dep_of": parent})
+
+
+@respx.mock
+def test_dependency_risk_sets_the_exit_code(
+    rpc_route: respx.Route,
+    set_parse: Callable[[ParseResult], None],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    set_parse(_parse_result(BENIGN))
+    dependency = _dep_report("evil", PIPES, parent="demo")
+
+    def fake_scan(
+        _root: Report, _depth: int, **_kwargs: object
+    ) -> list[Report]:
+        return [dependency]
+
+    monkeypatch.setattr(cli, "scan_dependencies", fake_scan)
+
+    # The root stays OK; the risky dependency drives the exit code.
+    assert cli.main(["demo", "--deps"]) == 2
+    out = capsys.readouterr().out
+    assert "Risk: OK" in out
+    assert "Dependencies" in out
+    assert "evil" in out
+    assert "Highest dependency risk: evil (100)" in out
+
+
+@respx.mock
+def test_json_dependencies_are_nested(
+    rpc_route: respx.Route,
+    set_parse: Callable[[ParseResult], None],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    set_parse(_parse_result(BENIGN))
+    dependency = _dep_report("lib", BENIGN, parent="demo")
+    dependency.dependencies.append(_dep_report("evil", PIPES, parent="lib"))
+
+    def fake_scan(
+        _root: Report, _depth: int, **_kwargs: object
+    ) -> list[Report]:
+        return [dependency]
+
+    monkeypatch.setattr(cli, "scan_dependencies", fake_scan)
+
+    assert cli.main(["demo", "--deps", "--depth", "2", "--json"]) == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["score"] == 0
+    assert payload["verdict"] == "ok"
+    assert payload["dependencies"][0]["package"]["name"] == "lib"
+    assert payload["dependencies"][0]["dep_of"] == "demo"
+    assert payload["dependencies"][0]["dependencies"][0]["package"]["name"] == "evil"
+    assert payload["dependencies"][0]["dependencies"][0]["dep_of"] == "lib"
+
+
+@respx.mock
+def test_dependency_options_are_forwarded(
+    rpc_route: respx.Route,
+    set_parse: Callable[[ParseResult], None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_parse(_parse_result(BENIGN))
+    captured: dict[str, object] = {}
+
+    def fake_scan(
+        _root: Report, depth: int, **kwargs: object
+    ) -> list[Report]:
+        captured["depth"] = depth
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(cli, "scan_dependencies", fake_scan)
+
+    assert (
+        cli.main(
+            [
+                "demo",
+                "--deps",
+                "--depth",
+                "3",
+                "--include-make",
+                "--max-deps",
+                "7",
+            ]
+        )
+        == 0
+    )
+    assert captured["depth"] == 3
+    assert captured["include_make"] is True
+    assert captured["max_deps"] == 7
+    assert captured["timeout"] == 10.0
+
+
+@respx.mock
+def test_without_deps_flag_dependencies_are_not_scanned(
+    rpc_route: respx.Route,
+    set_parse: Callable[[ParseResult], None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_parse(_parse_result(BENIGN))
+
+    def unexpected(*_args: object, **_kwargs: object) -> list[Report]:
+        raise AssertionError("dependencies must not be scanned without --deps")
+
+    monkeypatch.setattr(cli, "scan_dependencies", unexpected)
+
+    assert cli.main(["demo"]) == 0
+
+
+def test_dependency_depth_above_max_is_a_usage_error(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert cli.main(["demo", "--deps", "--depth", "6"]) == 3
+    assert "Invalid value" in capsys.readouterr().err
+
+
+@respx.mock
+def test_dependency_errors_are_rendered(
+    rpc_route: respx.Route,
+    set_parse: Callable[[ParseResult], None],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    set_parse(_parse_result(BENIGN))
+    dependency = _dep_report("broken", BENIGN, parent="demo").model_copy(
+        update={"errors": ["could not clone broken: timeout"]}
+    )
+
+    def fake_scan(
+        _root: Report, _depth: int, **_kwargs: object
+    ) -> list[Report]:
+        return [dependency]
+
+    monkeypatch.setattr(cli, "scan_dependencies", fake_scan)
+
+    assert cli.main(["demo", "--deps"]) == 0
+    out = capsys.readouterr().out
+    assert "Dependency notes" in out
+    assert "broken: could not clone broken: timeout" in out
+

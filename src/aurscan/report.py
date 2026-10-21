@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections import deque
+from collections.abc import Iterator, Sequence
 from datetime import datetime
 
 from rich.console import Console
@@ -26,6 +28,12 @@ _VERDICT_STYLES: dict[Verdict, str] = {
     Verdict.OK: "green",
     Verdict.REVIEW: "yellow",
     Verdict.RISKY: "bold red",
+}
+
+_VERDICT_ORDER: dict[Verdict, int] = {
+    Verdict.OK: 0,
+    Verdict.REVIEW: 1,
+    Verdict.RISKY: 2,
 }
 
 
@@ -52,6 +60,23 @@ def build_report(
     )
 
 
+def highest_verdict(report: Report) -> Verdict:
+    """Return the highest verdict among ``report`` and its dependencies."""
+    return max(
+        (item.verdict for item in iter_reports(report)),
+        key=_VERDICT_ORDER.__getitem__,
+    )
+
+
+def iter_reports(report: Report) -> Iterator[Report]:
+    """Yield ``report`` and every nested dependency breadth-first."""
+    queue: deque[Report] = deque([report])
+    while queue:
+        current = queue.popleft()
+        yield current
+        queue.extend(current.dependencies)
+
+
 def render_human(report: Report, console: Console) -> None:
     """Print the human-readable report."""
     _render_header(report.package, console)
@@ -63,6 +88,9 @@ def render_human(report: Report, console: Console) -> None:
     else:
         console.print(Text("Findings", style="bold"))
         console.print(Text("  none", style="dim"))
+
+    if report.dependencies:
+        _render_dependencies(report.dependencies, console)
 
     if report.errors:
         console.print()
@@ -150,6 +178,59 @@ def _render_findings(findings: list[Finding], console: Console) -> None:
             Text(_safe(item.message, 500)),
         )
     console.print(table)
+
+
+def _render_dependencies(dependencies: Sequence[Report], console: Console) -> None:
+    console.print()
+    console.print(Text("Dependencies", style="bold"))
+    table = Table(box=None, pad_edge=False)
+    table.add_column("name", no_wrap=True)
+    table.add_column("parent", no_wrap=True)
+    table.add_column("depth", justify="right", no_wrap=True)
+    table.add_column("score", justify="right", no_wrap=True)
+    table.add_column("verdict", no_wrap=True)
+
+    highest: Report | None = None
+    for dependency, depth in _walk_dependencies(dependencies):
+        table.add_row(
+            Text(_safe(dependency.package.name, 255)),
+            Text(_safe(dependency.dep_of or "\u2014", 255)),
+            Text(str(depth)),
+            Text(str(dependency.score)),
+            Text(dependency.verdict.value, style=_VERDICT_STYLES[dependency.verdict]),
+        )
+        if highest is None or dependency.score > highest.score:
+            highest = dependency
+    console.print(table)
+
+    if highest is not None:
+        console.print(
+            Text(
+                "Highest dependency risk: "
+                f"{_safe(highest.package.name, 255)} ({highest.score})"
+            )
+        )
+
+    notes = [
+        (dependency.package.name, error)
+        for dependency, _depth in _walk_dependencies(dependencies)
+        for error in dependency.errors
+    ]
+    if notes:
+        console.print()
+        console.print(Text("Dependency notes", style="bold yellow"))
+        for name, error in notes:
+            console.print(f"  {_safe(name, 255)}: {_safe(error, 500)}", style="yellow")
+
+
+def _walk_dependencies(
+    dependencies: Sequence[Report], depth: int = 1
+) -> Iterator[tuple[Report, int]]:
+    queue: deque[tuple[Report, int]] = deque((item, depth) for item in dependencies)
+    while queue:
+        dependency, level = queue.popleft()
+        yield dependency, level
+        queue.extend((child, level + 1) for child in dependency.dependencies)
 
 
 def _format_datetime(value: datetime) -> str:

@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 
+from rich.console import Console
+
+from aurscan.models import Report, Verdict
 from aurscan.parse import parse_pkgbuild
-from aurscan.report import build_report, render_json
+from aurscan.report import build_report, highest_verdict, render_human, render_json
 from aurscan.rules import RuleContext, registry
 from tests.rules_utils import make_meta
 
@@ -60,3 +63,74 @@ def test_json_report_finding_has_full_schema() -> None:
     assert item["line"] == SOURCE.splitlines().index(f"  {PIPE_COMMAND}") + 1
     assert item["snippet"] == CURL_SNIPPET
     assert item["source"] == "static"
+
+
+def _empty_report(
+    name: str,
+    *,
+    verdict: Verdict = Verdict.OK,
+    score: int = 0,
+    dep_of: str | None = None,
+    errors: list[str] | None = None,
+) -> Report:
+    return Report(
+        package=make_meta(name=name),
+        findings=[],
+        score=score,
+        verdict=verdict,
+        errors=list(errors or []),
+        dependencies=[],
+        dep_of=dep_of,
+    )
+
+
+def test_highest_verdict_includes_nested_dependencies() -> None:
+    root = _empty_report("root")
+    dependency = _empty_report("bar-helper", verdict=Verdict.REVIEW, score=12, dep_of="root")
+    child = _empty_report("nested", verdict=Verdict.RISKY, score=72, dep_of="bar-helper")
+    dependency.dependencies.append(child)
+    root.dependencies.append(dependency)
+
+    assert highest_verdict(root) == Verdict.RISKY
+    assert highest_verdict(dependency) == Verdict.RISKY
+    assert highest_verdict(child) == Verdict.RISKY
+
+
+def test_json_dependencies_are_nested() -> None:
+    root = _empty_report("root")
+    dependency = _empty_report("bar-helper", score=12, dep_of="root")
+    dependency.dependencies.append(_empty_report("nested", dep_of="bar-helper"))
+    root.dependencies.append(dependency)
+
+    payload = json.loads(render_json(root))
+
+    assert payload["dependencies"][0]["package"]["name"] == "bar-helper"
+    assert payload["dependencies"][0]["dep_of"] == "root"
+    assert payload["dependencies"][0]["dependencies"][0]["package"]["name"] == "nested"
+    assert payload["dependencies"][0]["dependencies"][0]["dep_of"] == "bar-helper"
+
+
+def test_human_dependency_table_reports_highest_risk_and_notes() -> None:
+    root = _empty_report("root")
+    dependency = _empty_report("bar-helper", verdict=Verdict.REVIEW, score=12, dep_of="root")
+    child = _empty_report(
+        "nested",
+        verdict=Verdict.RISKY,
+        score=72,
+        dep_of="bar-helper",
+        errors=["could not clone nested: timeout"],
+    )
+    dependency.dependencies.append(child)
+    root.dependencies.append(dependency)
+    console = Console(record=True, width=120)
+
+    render_human(root, console)
+    output = console.export_text()
+
+    assert "Dependencies" in output
+    assert "bar-helper" in output
+    assert "nested" in output
+    assert "Highest dependency risk: nested (72)" in output
+    assert "Dependency notes" in output
+    assert "could not clone nested: timeout" in output
+

@@ -11,6 +11,12 @@ import typer
 from rich.console import Console
 
 from aurscan.cache import ResponseCache, default_cache_dir
+from aurscan.deps import (
+    DEFAULT_DEPTH,
+    DEFAULT_MAX_DEPS,
+    MAX_DEPTH,
+    scan_dependencies,
+)
 from aurscan.errors import AurscanError, ExitCode
 from aurscan.fetch import fetch_meta
 from aurscan.history import (
@@ -20,7 +26,7 @@ from aurscan.history import (
 )
 from aurscan.models import Verdict
 from aurscan.pipeline import parse_package
-from aurscan.report import build_report, render_human, render_json
+from aurscan.report import build_report, highest_verdict, render_human, render_json
 from aurscan.rules import RuleContext, registry
 from aurscan.validation import sanitize_text, validate_package_name
 
@@ -54,6 +60,23 @@ def scan(
     no_history: bool = typer.Option(
         False, "--no-history", help="Skip git history analysis"
     ),
+    deps: bool = typer.Option(False, "--deps", help="Also scan AUR dependencies"),
+    depth: int = typer.Option(
+        DEFAULT_DEPTH,
+        "--depth",
+        min=1,
+        max=MAX_DEPTH,
+        help=f"Dependency depth to scan (max {MAX_DEPTH})",
+    ),
+    include_make: bool = typer.Option(
+        False, "--include-make", help="Include makedepends when scanning dependencies"
+    ),
+    max_deps: int = typer.Option(
+        DEFAULT_MAX_DEPS,
+        "--max-deps",
+        min=0,
+        help="Maximum number of dependencies to scan",
+    ),
 ) -> None:
     """Fetch, parse, and analyse PACKAGE, then print a risk report."""
     try:
@@ -77,11 +100,20 @@ def scan(
                 # History is an enhancement: a git failure must not abort the scan.
                 parse_result.errors.append(f"history analysis failed: {exc.message}")
         report = build_report(info, parse_result, findings)
+        if deps:
+            report.dependencies = scan_dependencies(
+                report,
+                depth,
+                include_make=include_make,
+                max_deps=max_deps,
+                timeout=timeout,
+                cache=cache,
+            )
         if json_output:
             typer.echo(render_json(report))
         else:
             render_human(report, Console())
-        raise _CommandExit(int(_VERDICT_EXIT_CODES[report.verdict]))
+        raise _CommandExit(int(_VERDICT_EXIT_CODES[highest_verdict(report)]))
     except AurscanError as exc:
         message = sanitize_text(str(exc), max_length=500) or exc.__class__.__name__
         if json_output:
