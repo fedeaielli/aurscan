@@ -1,4 +1,9 @@
 .venv/
+
+# Local-only agent and design notes; not published with the repository.
+/AGENTS.md
+/aurscan-project-plan.md
+
 __pycache__/
 *.py[cod]
 .pytest_cache/
