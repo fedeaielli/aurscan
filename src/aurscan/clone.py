@@ -13,7 +13,7 @@ from aurscan.validation import validate_package_name
 DEFAULT_TIMEOUT_SECONDS = 60.0
 MAX_CLONE_BYTES = 50 * 1024 * 1024
 
-_CLONE_FLAGS = ("--depth", "1", "--single-branch", "--no-tags", "--no-recurse-submodules")
+_CLONE_FLAGS = ("--single-branch", "--no-tags", "--no-recurse-submodules")
 _STRIPPED_GIT_ENV = frozenset(
     {
         "GIT_DIR",
@@ -34,13 +34,18 @@ def clone_package(
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     url: str | None = None,
     max_bytes: int = MAX_CLONE_BYTES,
+    depth: int = 1,
 ) -> Path:
-    """Clone ``name`` into ``dest`` with hooks, submodules and history disabled.
+    """Clone ``name`` into ``dest`` with hooks, submodules and extra history disabled.
 
-    ``dest`` must not exist. The clone is removed and ``CloneError`` raised if git
-    fails, times out, or checks out more than ``max_bytes``.
+    ``dest`` must not exist. ``depth`` controls how many commits are fetched;
+    history analysis uses ``n + 1`` so the oldest of ``n`` commits still has a
+    parent available for its diff. The clone is removed and ``CloneError`` raised
+    if git fails, times out, or checks out more than ``max_bytes``.
     """
     validate_package_name(name)
+    if depth < 1:
+        raise CloneError("clone depth must be at least 1")
     dest = Path(dest)
     if dest.exists():
         raise CloneError(f"clone destination already exists: {dest}")
@@ -51,6 +56,8 @@ def clone_package(
         "-c",
         "core.hooksPath=/dev/null",
         "clone",
+        "--depth",
+        str(depth),
         *_CLONE_FLAGS,
         "--",
         remote,
@@ -66,7 +73,7 @@ def clone_package(
             timeout=timeout,
             stdin=subprocess.DEVNULL,
             start_new_session=True,
-            env=_git_env(),
+            env=git_env(),
         )
     except FileNotFoundError as exc:
         raise CloneError("git executable not found") from exc
@@ -87,7 +94,8 @@ def clone_package(
     return dest
 
 
-def _git_env() -> dict[str, str]:
+def git_env() -> dict[str, str]:
+    """Return an environment for hardened git invocations."""
     env = {key: value for key, value in os.environ.items() if key not in _STRIPPED_GIT_ENV}
     env["GIT_TERMINAL_PROMPT"] = "0"
     return env

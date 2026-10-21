@@ -13,6 +13,11 @@ from rich.console import Console
 from aurscan.cache import ResponseCache, default_cache_dir
 from aurscan.errors import AurscanError, ExitCode
 from aurscan.fetch import fetch_meta
+from aurscan.history import (
+    clone_history,
+    diff_findings,
+    maintainer_change_findings,
+)
 from aurscan.models import Verdict
 from aurscan.pipeline import parse_package
 from aurscan.report import build_report, render_human, render_json
@@ -46,6 +51,9 @@ def scan(
     timeout: float = typer.Option(10.0, "--timeout", min=1.0, help="Network timeout in seconds"),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON instead of a table"),
     no_cache: bool = typer.Option(False, "--no-cache", help="Bypass the on-disk HTTP cache"),
+    no_history: bool = typer.Option(
+        False, "--no-history", help="Skip git history analysis"
+    ),
 ) -> None:
     """Fetch, parse, and analyse PACKAGE, then print a risk report."""
     try:
@@ -59,7 +67,16 @@ def scan(
             meta=info,
             cloned_files=tuple(parse_result.cloned_files),
         )
-        report = build_report(info, parse_result, registry.run_all(context))
+        findings = registry.run_all(context)
+        if not no_history:
+            try:
+                commits = clone_history(name)
+                findings.extend(diff_findings(commits, registry))
+                findings.extend(maintainer_change_findings(commits, info))
+            except AurscanError as exc:
+                # History is an enhancement: a git failure must not abort the scan.
+                parse_result.errors.append(f"history analysis failed: {exc.message}")
+        report = build_report(info, parse_result, findings)
         if json_output:
             typer.echo(render_json(report))
         else:

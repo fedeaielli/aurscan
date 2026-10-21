@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+from aurscan.history import Commit, maintainer_change_findings
 from aurscan.models import Severity
 from tests.rules_utils import NOW, by_rule, make_meta, run_rules
 
@@ -14,8 +15,33 @@ build() {
 """
 
 
-def test_m01_is_a_stub_until_m4() -> None:
-    assert by_rule(run_rules(meta=make_meta()), "M01") == []
+def _commit(author: str, hash_char: str) -> Commit:
+    return Commit(
+        hash=hash_char * 40,
+        author=author,
+        date=NOW,
+        message="update",
+        files=["PKGBUILD"],
+        tree_files=["PKGBUILD"],
+    )
+
+
+def test_m01_fires_for_orphan_with_author_change() -> None:
+    commits = [_commit("Bob", "b"), _commit("Alice", "a")]
+
+    findings = maintainer_change_findings(commits, make_meta(maintainer=None))
+
+    assert [item.rule_id for item in findings] == ["M01"]
+    assert findings[0].severity == Severity.MEDIUM
+    assert findings[0].source == "history"
+
+
+def test_m01_ignores_maintained_packages_and_single_author() -> None:
+    changed = [_commit("Bob", "b"), _commit("Alice", "a")]
+    same_author = [_commit("Alice", "b"), _commit("Alice", "a")]
+
+    assert maintainer_change_findings(changed, make_meta(maintainer="Bob")) == []
+    assert maintainer_change_findings(same_author, make_meta(maintainer=None)) == []
 
 
 def test_m02_flags_new_packages_without_votes() -> None:

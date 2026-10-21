@@ -1,6 +1,6 @@
-"""M01-M04: package metadata rules.
+"""M02-M04: package metadata rules.
 
-M01 is a stub here; M4 implements author-change detection from git history.
+M01 depends on git history and lives in :mod:`aurscan.history`.
 """
 
 from __future__ import annotations
@@ -13,12 +13,6 @@ from aurscan.rules import RuleContext, register, register_aggregate
 from aurscan.rules.common import METADATA_FILE, finding
 
 NEW_PACKAGE_DAYS = 30
-
-
-@register("M01", Severity.MEDIUM)
-def m01_author_change_stub(_ctx: RuleContext) -> list[Finding]:
-    """Placeholder for the history-based author-change rule (implemented in M4)."""
-    return []
 
 
 @register("M02", Severity.LOW)

@@ -39,6 +39,10 @@ class ParseError(AurscanError):
     """A PKGBUILD or install script could not be parsed."""
 
 
+class HistoryError(AurscanError):
+    """Git history could not be read safely."""
+
+
 class ConfigError(AurscanError):
     """Scoring configuration is missing or invalid."""
 

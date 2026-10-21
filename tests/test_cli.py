@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,9 @@ import pytest
 import respx
 
 import aurscan.cli as cli
+from aurscan.errors import HistoryError
 from aurscan.fetch import RPC_URL
+from aurscan.history import Commit
 from aurscan.models import ParseResult
 from aurscan.parse import parse_install_script, parse_pkgbuild
 
@@ -63,6 +66,8 @@ def set_parse(monkeypatch: pytest.MonkeyPatch) -> Callable[[ParseResult], None]:
             return result
 
         monkeypatch.setattr(cli, "parse_package", fake)
+        # Keep the history clone off by default; individual tests override it.
+        monkeypatch.setattr(cli, "clone_history", lambda _name: [])
 
     return _set
 
@@ -271,3 +276,65 @@ def test_cache_reuses_a_response(
     assert cli.main(["demo"]) == 0
     assert cli.main(["demo"]) == 0
     assert rpc_route.call_count == 1
+
+
+@respx.mock
+def test_history_findings_are_reported(
+    rpc_route: respx.Route,
+    set_parse: Callable[[ParseResult], None],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    set_parse(_parse_result(BENIGN))
+    commit = Commit(
+        hash="a" * 40,
+        author="Bob",
+        date=datetime(2026, 1, 1, tzinfo=UTC),
+        message="add update step",
+        files=["PKGBUILD"],
+        added_lines={"PKGBUILD": [8]},
+        content={"PKGBUILD": REVIEW_PKGBUILD},
+        tree_files=["PKGBUILD"],
+    )
+    monkeypatch.setattr(cli, "clone_history", lambda _name: [commit])
+
+    assert cli.main(["demo"]) == 1
+    out = capsys.readouterr().out
+    assert "R01" in out
+    assert "new in commit aaaaaaa:" in out
+
+
+@respx.mock
+def test_no_history_skips_the_history_clone(
+    rpc_route: respx.Route,
+    set_parse: Callable[[ParseResult], None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_parse(_parse_result(BENIGN))
+
+    def _unexpected(_name: str) -> list[Commit]:
+        raise AssertionError("history must not run with --no-history")
+
+    monkeypatch.setattr(cli, "clone_history", _unexpected)
+
+    assert cli.main(["demo", "--no-history"]) == 0
+
+
+@respx.mock
+def test_history_failure_is_an_analysis_note(
+    rpc_route: respx.Route,
+    set_parse: Callable[[ParseResult], None],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    set_parse(_parse_result(BENIGN))
+
+    def _fail(_name: str) -> list[Commit]:
+        raise HistoryError("git log failed")
+
+    monkeypatch.setattr(cli, "clone_history", _fail)
+
+    assert cli.main(["demo"]) == 0
+    out = capsys.readouterr().out
+    assert "Analysis notes" in out
+    assert "history analysis failed: git log failed" in out
