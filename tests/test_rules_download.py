@@ -46,6 +46,18 @@ build() {
     assert all(finding.severity == Severity.HIGH for finding in findings)
 
 
+def test_r02_decoding_pipe_to_eval_is_high() -> None:
+    source = """\
+build() {
+  base64 -d payload.b64 | eval
+}
+"""
+    findings = by_rule(run_rules(source), "R02")
+
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.HIGH
+
+
 def test_r03_dynamic_eval_is_medium() -> None:
     source = """\
 build() {

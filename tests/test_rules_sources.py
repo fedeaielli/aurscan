@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from aurscan.models import Severity
+from aurscan.rules.common import same_domain
 from tests.rules_utils import by_rule, run_rules
 
 STRONG = "b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184"
@@ -42,6 +43,43 @@ sha256sums=('{STRONG}')
 """
     findings = run_rules(source)
     assert by_rule(findings, "R04") == []
+
+
+def test_r04_trusts_subdomain_of_upstream_domain() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+url="https://upstream.org/demo"
+source=("https://dl1.upstream.org/file")
+sha256sums=('{STRONG}')
+"""
+    assert by_rule(run_rules(source), "R04") == []
+
+
+def test_r04_flags_unrelated_domain() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+url="https://upstream.org/demo"
+source=("https://other.com/file")
+sha256sums=('{STRONG}')
+"""
+    findings = by_rule(run_rules(source), "R04")
+
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.MEDIUM
+    assert "other.com" in findings[0].message
+
+
+def test_same_domain_accepts_host_and_subdomains() -> None:
+    assert same_domain("upstream.org", "upstream.org")
+    assert same_domain("dl1.upstream.org", "upstream.org")
+    assert not same_domain("other.com", "upstream.org")
+    assert not same_domain("notupstream.org", "upstream.org")
 
 
 def test_r05_http_is_medium_and_downgraded_with_trusted_checksum() -> None:
@@ -111,3 +149,37 @@ source=("git+https://example.invalid/repo.git")
 sha256sums=('SKIP')
 """
     assert by_rule(run_rules(source), "R06") == []
+
+
+def test_r06_count_mismatch_without_skip() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+source=("a.tar.gz" "b.tar.gz")
+sha256sums=('{STRONG}')
+"""
+    findings = by_rule(run_rules(source), "R06")
+
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.LOW
+    assert "mismatch" in findings[0].message
+    assert "SKIP" not in findings[0].message
+
+
+def test_r06_skip_without_count_mismatch() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+source=("a.tar.gz" "b.tar.gz")
+sha256sums=('SKIP' '{STRONG}')
+"""
+    findings = by_rule(run_rules(source), "R06")
+
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.LOW
+    assert "SKIP" in findings[0].message
+    assert "mismatch" not in findings[0].message

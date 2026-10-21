@@ -28,6 +28,22 @@ def test_r15_accepts_present_install_script() -> None:
     assert by_rule(findings, "R15") == []
 
 
+def test_r15_expands_pkgname_in_install_declaration() -> None:
+    source = """\
+pkgname=google-chrome
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+install=$pkgname.install
+"""
+    findings = run_rules(
+        source,
+        cloned_files=("PKGBUILD", "google-chrome.install"),
+    )
+
+    assert by_rule(findings, "R15") == []
+
+
 def test_r15_stays_silent_without_a_file_list() -> None:
     assert by_rule(run_rules(PKGBUILD), "R15") == []
 

@@ -182,6 +182,8 @@ def test_clone_failure_json_contains_errors(
     )
     set_parse(failed)
 
+    # Exit 0 is intentional: a clone failure is an analysis error, not an
+    # operational failure. Per hard-rule 8 the scan continues with metadata only.
     assert cli.main(["demo", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["package"]["name"] == "demo"
