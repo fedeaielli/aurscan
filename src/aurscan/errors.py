@@ -39,6 +39,10 @@ class ParseError(AurscanError):
     """A PKGBUILD or install script could not be parsed."""
 
 
+class ConfigError(AurscanError):
+    """Scoring configuration is missing or invalid."""
+
+
 class SafetyError(AurscanError):
     """A file-system safety invariant was violated."""
 

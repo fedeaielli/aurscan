@@ -106,6 +106,7 @@ class ParseResult(AurscanModel):
     parse_failed: bool
     findings: list[Finding] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    cloned_files: list[str] = Field(default_factory=list)
 
 
 class Finding(AurscanModel):

@@ -1,0 +1,113 @@
+"""Per-rule tests for R04-R06."""
+
+from __future__ import annotations
+
+from aurscan.models import Severity
+from tests.rules_utils import by_rule, run_rules
+
+STRONG = "b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184"
+
+
+def test_r04_flags_foreign_and_user_content_hosts() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+url="https://example.invalid/demo"
+source=(
+  "https://mirror.invalid/demo.tar.gz"
+  "https://raw.githubusercontent.com/user/repo/main/helper.sh"
+  "https://cdn.example.invalid/demo.tar.gz"
+  "local.patch"
+)
+sha256sums=('{STRONG}')
+"""
+    findings = by_rule(run_rules(source), "R04")
+
+    assert len(findings) == 2
+    assert all(finding.severity == Severity.MEDIUM for finding in findings)
+    assert any("mirror.invalid" in finding.message for finding in findings)
+    assert any("user-content" in finding.message for finding in findings)
+
+
+def test_r04_skips_without_upstream_url_and_for_vcs_sources() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+source=("https://mirror.invalid/demo.tar.gz" "git+https://other.invalid/repo.git")
+sha256sums=('{STRONG}')
+"""
+    findings = run_rules(source)
+    assert by_rule(findings, "R04") == []
+
+
+def test_r05_http_is_medium_and_downgraded_with_trusted_checksum() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+url="https://example.invalid/demo"
+source=(
+  "http://example.invalid/demo.tar.gz"
+  "http://mirror.invalid/demo.tar.gz"
+  "https://192.0.2.10/demo.tar.gz"
+)
+sha256sums=('{STRONG}' '{STRONG}' '{STRONG}')
+"""
+    findings = by_rule(run_rules(source), "R05")
+
+    severity_by_line = {finding.line: finding.severity for finding in findings}
+    assert severity_by_line == {
+        7: Severity.LOW,
+        8: Severity.MEDIUM,
+        9: Severity.MEDIUM,
+    }
+
+
+def test_r05_alignment_requires_matching_checksum_count() -> None:
+    source = """\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+url="https://example.invalid/demo"
+source=("http://example.invalid/demo.tar.gz")
+sha256sums=('b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184' 'extra')
+"""
+    findings = by_rule(run_rules(source), "R05")
+
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.MEDIUM
+
+
+def test_r06_skip_and_mismatch_are_one_low_finding() -> None:
+    source = """\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+source=("a.tar.gz" "b.tar.gz" "git+https://example.invalid/repo.git")
+sha256sums=('SKIP' 'b1946ac92492d2347c6235b4d2611184')
+"""
+    findings = by_rule(run_rules(source), "R06")
+
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.LOW
+    assert "SKIP" in findings[0].message
+    assert "mismatch" in findings[0].message
+
+
+def test_r06_skip_on_vcs_source_is_expected() -> None:
+    source = """\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+source=("git+https://example.invalid/repo.git")
+sha256sums=('SKIP')
+"""
+    assert by_rule(run_rules(source), "R06") == []

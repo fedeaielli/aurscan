@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 import respx
 
+from aurscan.cache import ResponseCache
 from aurscan.errors import FetchError, InvalidPackageNameError
 from aurscan.fetch import (
     BATCH_SIZE,
@@ -208,6 +210,40 @@ def test_fetch_meta_many_deduplicates() -> None:
     assert list(packages) == ["demo"]
     assert route.call_count == 1
     assert route.calls[0].request.url.params.get_list("arg[]") == ["demo"]
+
+
+@respx.mock
+def test_fetch_meta_uses_a_supplied_cache(
+    tmp_path: Path,
+    make_package: Callable[..., dict[str, Any]],
+) -> None:
+    route = respx.get(url__startswith=RPC_URL).mock(
+        return_value=httpx.Response(200, json={"results": [make_package()]})
+    )
+    cache = ResponseCache(tmp_path / "cache")
+
+    first = fetch_meta("demo", cache=cache)
+    second = fetch_meta("demo", cache=cache)
+
+    assert first == second
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_fetch_meta_does_not_cache_errors(tmp_path: Path) -> None:
+    route = respx.get(url__startswith=RPC_URL).mock(
+        side_effect=[
+            httpx.Response(404),
+            httpx.Response(200, json={"results": []}),
+        ]
+    )
+    cache = ResponseCache(tmp_path / "cache")
+
+    with pytest.raises(FetchError, match="HTTP 404"):
+        fetch_meta("demo", cache=cache)
+    with pytest.raises(FetchError, match="not found"):
+        fetch_meta("demo", cache=cache)
+    assert route.call_count == 2
 
 
 def test_fetch_meta_many_empty_makes_no_request() -> None:

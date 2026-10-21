@@ -47,7 +47,10 @@ def parse_package(
         findings = list(result.findings)
         parse_failed = result.parse_failed
 
-        for relative in _install_candidates(clone_dir, result, errors):
+        files = _list_files(clone_dir, errors)
+        cloned_files = _relative_files(clone_dir, files)
+
+        for relative in _install_candidates(result, files, clone_dir):
             try:
                 source = read_text_safe(clone_dir, relative)
             except AurscanError as exc:
@@ -65,13 +68,37 @@ def parse_package(
             parse_failed=parse_failed,
             findings=findings,
             errors=errors,
+            cloned_files=cloned_files,
         )
 
 
+def _list_files(clone_dir: Path, errors: list[str]) -> list[Path]:
+    try:
+        return list(iter_regular_files(clone_dir))
+    except AurscanError as exc:
+        errors.append(f"could not list cloned files: {exc.message}")
+        return []
+
+
+def _relative_files(clone_dir: Path, files: list[Path]) -> list[str]:
+    """Return regular files as POSIX paths relative to the clone root."""
+    root = clone_dir.resolve()
+    relatives: list[str] = []
+    for path in files:
+        try:
+            relative = path.relative_to(root)
+        except ValueError:
+            continue
+        if relative.parts and relative.parts[0] == ".git":
+            continue
+        relatives.append(relative.as_posix())
+    return relatives
+
+
 def _install_candidates(
-    clone_dir: Path,
     result: ParseResult,
-    errors: list[str],
+    files: list[Path],
+    clone_dir: Path,
 ) -> list[str]:
     """Return install-script paths: the declared file plus top-level ``*.install``."""
     candidates: list[str] = []
@@ -80,12 +107,6 @@ def _install_candidates(
         candidates.append(declared)
 
     root = clone_dir.resolve()
-    try:
-        files = list(iter_regular_files(clone_dir))
-    except AurscanError as exc:
-        errors.append(f"could not list cloned files: {exc.message}")
-        files = []
-
     for path in files:
         try:
             relative = path.relative_to(root)

@@ -75,6 +75,10 @@ def test_parse_package_merges_pkgbuild_and_install_scripts(tmp_path: Path) -> No
         "demo.install",
         "extra.install",
     ]
+    assert "PKGBUILD" in result.cloned_files
+    assert "demo.install" in result.cloned_files
+    assert "extra.install" in result.cloned_files
+    assert not any(path.startswith(".git/") for path in result.cloned_files)
 
 
 def test_parse_package_reports_missing_install_file(tmp_path: Path) -> None:
@@ -86,6 +90,7 @@ def test_parse_package_reports_missing_install_file(tmp_path: Path) -> None:
     assert result.pkgbuild is not None
     assert result.parse_failed is False
     assert result.install_scripts == []
+    assert result.cloned_files == ["PKGBUILD"]
     assert len(result.errors) == 1
     assert "missing.install" in result.errors[0]
 

@@ -13,6 +13,7 @@ from urllib.parse import urlencode
 import httpx
 from pydantic import ValidationError
 
+from aurscan.cache import ResponseCache
 from aurscan.errors import FetchError
 from aurscan.models import PackageInfo
 from aurscan.validation import validate_package_name
@@ -35,19 +36,28 @@ def http_get(
     timeout: float = 10.0,
     client: httpx.Client | None = None,
     sleep: Callable[[float], None] = time.sleep,
+    cache: ResponseCache | None = None,
 ) -> bytes:
     """GET ``url`` and return the body, retrying transient failures.
 
     Redirects are not followed and bodies larger than ``MAX_BODY_BYTES`` are rejected.
+    A supplied ``cache`` is consulted before the request and filled on success.
     """
+    if cache is not None:
+        cached = cache.get(url)
+        if cached is not None:
+            return cached
     owns_client = client is None
     if client is None:
         client = httpx.Client(trust_env=False, follow_redirects=False, timeout=timeout)
     try:
-        return _get_with_retries(client, url, timeout=timeout, sleep=sleep)
+        body = _get_with_retries(client, url, timeout=timeout, sleep=sleep)
     finally:
         if owns_client:
             client.close()
+    if cache is not None:
+        cache.put(url, body)
+    return body
 
 
 def _get_with_retries(
@@ -105,10 +115,11 @@ def fetch_meta(
     timeout: float = 10.0,
     client: httpx.Client | None = None,
     sleep: Callable[[float], None] = time.sleep,
+    cache: ResponseCache | None = None,
 ) -> PackageInfo:
     """Fetch metadata for a single AUR package."""
     validate_package_name(name)
-    results = _rpc_request([name], timeout=timeout, client=client, sleep=sleep)
+    results = _rpc_request([name], timeout=timeout, client=client, sleep=sleep, cache=cache)
     if not results:
         raise FetchError(f"package not found: {name}")
     return _parse_package(results[0])
@@ -120,6 +131,7 @@ def fetch_meta_many(
     timeout: float = 10.0,
     client: httpx.Client | None = None,
     sleep: Callable[[float], None] = time.sleep,
+    cache: ResponseCache | None = None,
 ) -> dict[str, PackageInfo]:
     """Fetch metadata for several packages, batching requests at ``BATCH_SIZE``.
 
@@ -133,7 +145,9 @@ def fetch_meta_many(
     for index, batch in enumerate(_chunks(unique_names, BATCH_SIZE)):
         if index:
             sleep(BATCH_PAUSE_SECONDS)
-        results = _rpc_request(batch, timeout=timeout, client=client, sleep=sleep)
+        results = _rpc_request(
+            batch, timeout=timeout, client=client, sleep=sleep, cache=cache
+        )
         for raw in results:
             info = _parse_package(raw)
             packages[info.name] = info
@@ -151,11 +165,14 @@ def _rpc_request(
     timeout: float,
     client: httpx.Client | None,
     sleep: Callable[[float], None],
+    cache: ResponseCache | None = None,
 ) -> list[object]:
     if not names:
         return []
     query = urlencode([("arg[]", name) for name in names])
-    body = http_get(f"{RPC_URL}?{query}", timeout=timeout, client=client, sleep=sleep)
+    body = http_get(
+        f"{RPC_URL}?{query}", timeout=timeout, client=client, sleep=sleep, cache=cache
+    )
     try:
         payload: Any = json.loads(body)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:

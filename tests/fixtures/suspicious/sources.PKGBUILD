@@ -1,0 +1,17 @@
+pkgname=sources-demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+url="https://example.invalid/sources-demo"
+source=(
+  "https://mirror.invalid/sources-demo.tar.gz"
+  "https://raw.githubusercontent.com/user/repo/main/helper.sh"
+  "http://mirror.invalid/plain.tar.gz"
+  "git+https://example.invalid/repo.git"
+)
+sha256sums=(
+  'b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+)

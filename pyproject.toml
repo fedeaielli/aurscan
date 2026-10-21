@@ -34,6 +34,9 @@ package = true
 [tool.hatch.build.targets.wheel]
 packages = ["src/aurscan"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"config/scoring.yml" = "aurscan/config/scoring.yml"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
@@ -49,3 +52,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF100"]
 python_version = "3.12"
 strict = true
 files = ["src"]
+
+[[tool.mypy.overrides]]
+module = ["yaml"]
+ignore_missing_imports = true

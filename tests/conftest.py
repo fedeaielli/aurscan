@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -34,3 +35,9 @@ def make_package() -> Callable[..., dict[str, Any]]:
         return payload
 
     return _make
+
+
+@pytest.fixture(autouse=True)
+def _isolate_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep every test away from the real on-disk HTTP cache."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache-home"))
