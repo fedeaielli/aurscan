@@ -1,0 +1,12 @@
+pre_install() {
+  echo "preparing"
+}
+
+post_install() {
+  systemctl enable demo.service
+  echo "done"
+}
+
+pre_upgrade() {
+  systemctl stop demo.service || true
+}

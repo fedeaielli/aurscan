@@ -1,0 +1,28 @@
+pkgname=benign-demo
+pkgver=2.0.1
+pkgrel=3
+pkgdesc="A well behaved demo package"
+arch=('x86_64')
+url="https://example.invalid/benign-demo"
+license=('MIT')
+depends=('glibc')
+makedepends=('cmake' 'gcc')
+source=("$url/benign-demo-$pkgver.tar.gz")
+sha256sums=('b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184')
+
+prepare() {
+  cd "$srcdir/benign-demo-$pkgver"
+  sed -i 's|/usr/local|/usr|' CMakeLists.txt
+}
+
+build() {
+  cd "$srcdir/benign-demo-$pkgver"
+  cmake -B build -DCMAKE_BUILD_TYPE=Release
+  cmake --build build
+}
+
+package() {
+  cd "$srcdir/benign-demo-$pkgver"
+  DESTDIR="$pkgdir" cmake --install build
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

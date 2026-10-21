@@ -105,6 +105,7 @@ class ParseResult(AurscanModel):
     install_scripts: list[InstallScript]
     parse_failed: bool
     findings: list[Finding] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
 
 
 class Finding(AurscanModel):
