@@ -2,9 +2,24 @@
 name = "aurscan"
 version = "0.1.0"
 description = "Static risk scanner for AUR packages"
+readme = "README.md"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
+authors = [{ name = "faielli" }]
+keywords = ["aur", "archlinux", "pkgbuild", "security", "static-analysis"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: System Administrators",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Typing :: Typed",
+]
 dependencies = [
     "typer>=0.12",
     "rich>=13",
@@ -17,6 +32,11 @@ dependencies = [
 
 [project.scripts]
 aurscan = "aurscan.cli:run"
+
+[project.urls]
+Homepage = "https://github.com/faielli/aurscan"
+Repository = "https://github.com/faielli/aurscan"
+Issues = "https://github.com/faielli/aurscan/issues"
 
 [dependency-groups]
 dev = [
