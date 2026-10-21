@@ -11,6 +11,7 @@ what a package is about to do.
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Arch Linux](https://img.shields.io/badge/arch-linux-1793d1?logo=archlinux&logoColor=white)](https://archlinux.org/)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
 > **Status:** early development. The rule catalogue and scoring model may
 > change between releases.
@@ -264,3 +265,14 @@ A rule should:
 
 Commit messages follow
 `feat/fix/docs/test/refactor(scope): description (Mx)`.
+
+## License
+
+Copyright (C) 2026 faielli.
+
+aurscan is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+See [LICENSE](LICENSE) for the full text.

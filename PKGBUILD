@@ -5,7 +5,7 @@ pkgrel=1
 pkgdesc="Static risk scanner for AUR packages"
 arch=('any')
 url="https://github.com/faielli/aurscan"
-license=('custom')
+license=('GPL-3.0-or-later')
 depends=(
   'python'
   'python-httpx'

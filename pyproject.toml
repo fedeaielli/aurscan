@@ -2,6 +2,8 @@
 name = "aurscan"
 version = "0.1.0"
 description = "Static risk scanner for AUR packages"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "typer>=0.12",
