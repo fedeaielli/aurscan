@@ -19,7 +19,7 @@ from aurscan.errors import FetchError
 from aurscan.models import PackageInfo
 from aurscan.validation import validate_package_name
 
-USER_AGENT = "aurscan/0.1 (+contact)"
+USER_AGENT = "aurscan/0.1 (+https://github.com/faielli/aurscan)"
 RPC_URL = "https://aur.archlinux.org/rpc/v5/info"
 MAX_BODY_BYTES = 1024 * 1024
 MAX_RETRIES = 3
