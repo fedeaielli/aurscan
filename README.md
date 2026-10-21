@@ -65,7 +65,7 @@ cd aurscan
 uv tool install .
 ```
 
-Once the project is published on PyPI, the shorter form works too:
+A PyPI release is planned. Once it lands, the shorter form works too:
 
 ```bash
 uv tool install aurscan
