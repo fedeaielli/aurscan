@@ -11,6 +11,7 @@ import math
 import re
 from collections import Counter
 from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -82,9 +83,9 @@ SENSITIVE_PATH_NEEDLES: tuple[tuple[str, str], ...] = (
     (".gnupg", "GnuPG keys"),
     (".aws", "AWS credentials"),
     (".mozilla", "browser profile"),
-    ("google-chrome", "browser profile"),
-    ("chromium", "browser profile"),
-    ("BraveSoftware", "browser profile"),
+    (".config/google-chrome", "browser profile"),
+    (".config/chromium", "browser profile"),
+    (".config/BraveSoftware", "browser profile"),
     (".bitcoin", "crypto wallet"),
     (".ethereum", "crypto wallet"),
     (".electrum", "crypto wallet"),
@@ -294,16 +295,65 @@ def is_user_content_host(host: str) -> bool:
     return any(host == known or host.endswith(f".{known}") for known in USER_CONTENT_HOSTS)
 
 
+@dataclass(frozen=True)
+class SourceGroup:
+    """One source/checksum set: the base variables or one architecture suffix."""
+
+    arch: str | None
+    sources: list[str]
+    checksums: dict[str, list[str]]
+
+    @property
+    def label(self) -> str:
+        """Return the source variable name (``source`` or ``source_<arch>``)."""
+        return "source" if self.arch is None else f"source_{self.arch}"
+
+    def checksum_label(self, kind: str) -> str:
+        """Return a checksum variable name for this group."""
+        return kind if self.arch is None else f"{kind}_{self.arch}"
+
+
+def source_groups(pkgbuild: Pkgbuild) -> tuple[SourceGroup, ...]:
+    """Return the base source group followed by every architecture-specific group."""
+    groups = [
+        SourceGroup(
+            arch=None,
+            sources=pkgbuild.source,
+            checksums={
+                "sha256sums": pkgbuild.sha256sums,
+                "sha512sums": pkgbuild.sha512sums,
+                "md5sums": pkgbuild.md5sums,
+                "b2sums": pkgbuild.b2sums,
+            },
+        )
+    ]
+    for arch in sorted(pkgbuild.sources_by_arch):
+        groups.append(
+            SourceGroup(
+                arch=arch,
+                sources=pkgbuild.sources_by_arch[arch],
+                checksums=pkgbuild.checksums_by_arch.get(arch, {}),
+            )
+        )
+    return tuple(groups)
+
+
 def aligned_strong_checksum(pkgbuild: Pkgbuild, index: int) -> str | None:
-    """Return a non-SKIP sha256/sha512 value aligned with a source entry.
+    """Return a non-SKIP sha256/sha512 value aligned with a base source entry.
 
     Alignment requires equal list lengths, so a source/checksum count mismatch
     cannot be used to downgrade a finding.
     """
-    if index >= len(pkgbuild.source):
+    return aligned_strong_checksum_in(source_groups(pkgbuild)[0], index)
+
+
+def aligned_strong_checksum_in(group: SourceGroup, index: int) -> str | None:
+    """Return a non-SKIP strong checksum aligned with a source group entry."""
+    if index >= len(group.sources):
         return None
-    for values in (pkgbuild.sha256sums, pkgbuild.sha512sums):
-        if len(values) != len(pkgbuild.source) or index >= len(values):
+    for kind in ("sha256sums", "sha512sums"):
+        values = group.checksums.get(kind, [])
+        if len(values) != len(group.sources) or index >= len(values):
             continue
         value = values[index].strip()
         if value and value != "SKIP":
@@ -312,7 +362,7 @@ def aligned_strong_checksum(pkgbuild: Pkgbuild, index: int) -> str | None:
 
 
 def checksum_arrays(pkgbuild: Pkgbuild) -> tuple[tuple[str, list[str]], ...]:
-    """Return the checksum arrays known to the parser, with their variable names."""
+    """Return the base checksum arrays, with their variable names."""
     return (
         ("sha256sums", pkgbuild.sha256sums),
         ("sha512sums", pkgbuild.sha512sums),

@@ -56,6 +56,36 @@ def test_parse_typical_pkgbuild_preserves_raw_values() -> None:
     assert pkgbuild.variables["pkgver"] == "1.2.3"
 
 
+def test_parse_architecture_specific_sources_and_checksums() -> None:
+    strong = "b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184"
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64' 'aarch64')
+url="https://example.invalid/demo"
+source=("$url/base.tar.gz")
+sha256sums=('{strong}')
+source_x86_64=("https://example.invalid/demo-x86_64.tar.gz")
+sha256sums_x86_64=('{strong}')
+source_aarch64=("https://example.invalid/demo-aarch64.tar.gz")
+sha256sums_aarch64=('{strong}')
+"""
+
+    result = parse_pkgbuild(source)
+
+    pkgbuild = result.pkgbuild
+    assert pkgbuild is not None
+    assert pkgbuild.source == ["$url/base.tar.gz"]
+    assert pkgbuild.sha256sums == [strong]
+    assert pkgbuild.sources_by_arch == {
+        "x86_64": ["https://example.invalid/demo-x86_64.tar.gz"],
+        "aarch64": ["https://example.invalid/demo-aarch64.tar.gz"],
+    }
+    assert pkgbuild.checksums_by_arch["x86_64"]["sha256sums"] == [strong]
+    assert pkgbuild.checksums_by_arch["aarch64"]["sha256sums"] == [strong]
+
+
 def test_parse_typical_pkgbuild_functions_and_lines() -> None:
     source = _fixture("pkgbuild", "typical.PKGBUILD")
 

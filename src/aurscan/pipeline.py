@@ -35,18 +35,29 @@ def parse_package(
         try:
             clone_package(name, clone_dir, timeout=timeout, url=_git_url)
         except AurscanError as exc:
-            return _failed_result(f"could not clone {name}: {exc.message}")
+            return _failed_result(
+                f"Could not clone repo for {name} — analysis based on metadata only "
+                f"({exc.message})"
+            )
 
         try:
             pkgbuild_source = read_text_safe(clone_dir, PKGBUILD_FILENAME)
         except AurscanError as exc:
-            return _failed_result(f"could not read {PKGBUILD_FILENAME}: {exc.message}")
+            return _failed_result(
+                f"Could not read {PKGBUILD_FILENAME} for {name} — "
+                f"analysis based on metadata only ({exc.message})"
+            )
 
         result = parse_pkgbuild(pkgbuild_source)
         errors = list(result.errors)
         install_scripts = list(result.install_scripts)
         findings = list(result.findings)
         parse_failed = result.parse_failed
+        if parse_failed:
+            errors.append(
+                f"Could not fully parse {PKGBUILD_FILENAME} for {name} — "
+                "analysis may be incomplete"
+            )
 
         files = _list_files(clone_dir, errors)
         cloned_files = _relative_files(clone_dir, files)
@@ -55,12 +66,14 @@ def parse_package(
             try:
                 source = read_text_safe(clone_dir, relative)
             except AurscanError as exc:
-                errors.append(f"could not read {relative}: {exc.message}")
+                errors.append(f"Could not read {relative} — skipped ({exc.message})")
                 continue
             parsed = parse_install_script(source, relative)
             install_scripts.extend(parsed.install_scripts)
             findings.extend(parsed.findings)
             errors.extend(parsed.errors)
+            if parsed.parse_failed:
+                errors.append(f"Could not fully parse {relative} — analysis may be incomplete")
             parse_failed = parse_failed or parsed.parse_failed
 
         return ParseResult(
@@ -77,7 +90,9 @@ def _list_files(clone_dir: Path, errors: list[str]) -> list[Path]:
     try:
         return list(iter_regular_files(clone_dir))
     except AurscanError as exc:
-        errors.append(f"could not list cloned files: {exc.message}")
+        errors.append(
+            f"Could not list cloned files — analysis may be incomplete ({exc.message})"
+        )
         return []
 
 

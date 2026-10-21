@@ -7,6 +7,7 @@ Importing :mod:`aurscan.rules` loads every built-in rule module.
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -86,6 +87,26 @@ class RuleRegistry:
 
         return decorator
 
+    def get(self, rule_id: str) -> Rule | AggregateRule | None:
+        """Return the registered rule for ``rule_id``, or ``None``."""
+        return self._rules.get(rule_id)
+
+    def explain(self, rule_id: str) -> tuple[Severity, str] | None:
+        """Return the severity and full description for ``rule_id``.
+
+        ``M01`` is implemented by the history module rather than the content
+        registry, so its catalogue entry is kept here for ``--explain``.
+        """
+        rule = self._rules.get(rule_id)
+        if rule is not None:
+            return rule.severity, inspect.getdoc(rule.func) or "No description available."
+        return _EXTRA_RULE_DESCRIPTIONS.get(rule_id)
+
+    def describe(self, rule_id: str) -> str | None:
+        """Return the full description for ``rule_id``, or ``None`` if unknown."""
+        info = self.explain(rule_id)
+        return info[1] if info is not None else None
+
     def run_all(self, ctx: RuleContext) -> list[Finding]:
         """Run every registered rule and return deduplicated, sorted findings."""
         findings: list[Finding] = []
@@ -135,6 +156,15 @@ registry = RuleRegistry()
 register = registry.register
 register_aggregate = registry.register_aggregate
 
+
+_EXTRA_RULE_DESCRIPTIONS: dict[str, tuple[Severity, str]] = {
+    "M01": (
+        Severity.MEDIUM,
+        "Flag a recent git author change on a package that is currently "
+        "orphaned. AUR only exposes the current maintainer, so orphan status is "
+        "the available 'previously orphaned' signal.",
+    ),
+}
 
 _RULE_MODULES = (
     "download",

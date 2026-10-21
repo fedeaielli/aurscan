@@ -51,9 +51,23 @@ class _CommandExit(Exception):
         self.code = code
 
 
+def _explain_rule(value: str) -> int:
+    """Print a rule's full description and return an exit code."""
+    rule_id = value.strip().upper()
+    info = registry.explain(rule_id)
+    if info is None:
+        safe = sanitize_text(value, max_length=80) or "?"
+        typer.echo(f"aurscan: error: unknown rule: {safe}", err=True)
+        return int(ExitCode.ERROR)
+    severity, description = info
+    typer.echo(f"{rule_id} ({severity.value})")
+    typer.echo(description)
+    return int(ExitCode.OK)
+
+
 @app.command()
 def scan(
-    package: str = typer.Argument(..., help="AUR package name"),
+    package: str | None = typer.Argument(None, help="AUR package name"),
     timeout: float = typer.Option(10.0, "--timeout", min=1.0, help="Network timeout in seconds"),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON instead of a table"),
     no_cache: bool = typer.Option(False, "--no-cache", help="Bypass the on-disk HTTP cache"),
@@ -77,8 +91,19 @@ def scan(
         min=0,
         help="Maximum number of dependencies to scan",
     ),
+    explain: str | None = typer.Option(
+        None,
+        "--explain",
+        metavar="RULE_ID",
+        help="Print the full description of RULE_ID and exit",
+    ),
 ) -> None:
     """Fetch, parse, and analyse PACKAGE, then print a risk report."""
+    if explain is not None:
+        raise _CommandExit(_explain_rule(explain))
+    if package is None:
+        typer.echo("aurscan: error: missing package name", err=True)
+        raise _CommandExit(int(ExitCode.ERROR))
     try:
         name = validate_package_name(package)
         cache = None if no_cache else ResponseCache(default_cache_dir())
@@ -93,7 +118,7 @@ def scan(
         findings = registry.run_all(context)
         if not no_history:
             try:
-                commits = clone_history(name)
+                commits = clone_history(name, timeout=timeout)
                 findings.extend(diff_findings(commits, registry))
                 findings.extend(maintainer_change_findings(commits, info))
             except AurscanError as exc:

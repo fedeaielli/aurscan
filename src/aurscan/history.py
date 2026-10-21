@@ -61,12 +61,14 @@ def clone_history(
     name: str,
     *,
     n: int = 10,
+    timeout: float = GIT_TIMEOUT_SECONDS,
     _git_url: str | None = None,
 ) -> list[Commit]:
     """Clone ``name`` and return its newest ``n`` commits, newest first.
 
     The clone fetches ``n + 1`` commits so the oldest returned commit still has
-    a parent to diff against. ``_git_url`` exists only for tests.
+    a parent to diff against. ``timeout`` applies to the clone; ``_git_url``
+    exists only for tests.
     """
     validate_package_name(name)
     if n < 1:
@@ -78,7 +80,7 @@ def clone_history(
             clone_package(
                 name,
                 clone_dir,
-                timeout=GIT_TIMEOUT_SECONDS,
+                timeout=timeout,
                 url=_git_url,
                 depth=n + 1,
             )

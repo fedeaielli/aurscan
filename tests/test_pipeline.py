@@ -123,7 +123,8 @@ def test_parse_package_surfaces_clone_failure_without_raising(tmp_path: Path) ->
     assert result.install_scripts == []
     assert result.parse_failed is True
     assert len(result.errors) == 1
-    assert "could not clone demo" in result.errors[0]
+    assert "Could not clone repo for demo" in result.errors[0]
+    assert "analysis based on metadata only" in result.errors[0]
 
 
 def test_parse_package_does_not_discover_nested_install_files(tmp_path: Path) -> None:

@@ -7,16 +7,18 @@ wires it in (and gains ``--no-cache``) together with the rule engine.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import stat
 import tempfile
 import time
 from collections.abc import Callable
-from contextlib import suppress
 from pathlib import Path
 
 DEFAULT_TTL_SECONDS = 3600.0
 MAX_ENTRY_BYTES = 1024 * 1024
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class ResponseCache:
@@ -79,8 +81,12 @@ class ResponseCache:
             return
         finally:
             if temporary is not None:
-                with suppress(OSError):
+                try:
                     os.unlink(temporary)
+                except OSError as exc:
+                    _LOGGER.warning(
+                        "could not remove temporary cache file %s: %s", temporary, exc
+                    )
 
     def _entry_path(self, url: str) -> Path:
         digest = hashlib.sha256(url.encode("utf-8", errors="replace")).hexdigest()

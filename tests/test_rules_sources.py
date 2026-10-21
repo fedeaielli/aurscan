@@ -32,6 +32,23 @@ sha256sums=('{STRONG}')
     assert any("user-content" in finding.message for finding in findings)
 
 
+def test_r04_checks_architecture_specific_sources() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+url="https://example.invalid/demo"
+source_x86_64=("https://mirror.invalid/demo.tar.gz")
+sha256sums_x86_64=('{STRONG}')
+"""
+    findings = by_rule(run_rules(source), "R04")
+
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.MEDIUM
+    assert "mirror.invalid" in findings[0].message
+
+
 def test_r04_skips_without_upstream_url_and_for_vcs_sources() -> None:
     source = f"""\
 pkgname=demo
@@ -106,6 +123,22 @@ sha256sums=('{STRONG}' '{STRONG}' '{STRONG}')
     }
 
 
+def test_r05_uses_architecture_specific_checksums() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+url="https://example.invalid/demo"
+source_x86_64=("http://example.invalid/demo.tar.gz")
+sha256sums_x86_64=('{STRONG}')
+"""
+    findings = by_rule(run_rules(source), "R05")
+
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.LOW
+
+
 def test_r05_alignment_requires_matching_checksum_count() -> None:
     source = """\
 pkgname=demo
@@ -137,6 +170,40 @@ sha256sums=('SKIP' 'b1946ac92492d2347c6235b4d2611184')
     assert findings[0].severity == Severity.LOW
     assert "SKIP" in findings[0].message
     assert "mismatch" in findings[0].message
+
+
+def test_r06_checks_architecture_specific_checksums() -> None:
+    source = """\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+url="https://example.invalid/demo"
+source_x86_64=("demo.tar.gz")
+sha256sums_x86_64=('SKIP')
+"""
+    findings = by_rule(run_rules(source), "R06")
+
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.LOW
+    assert "SKIP" in findings[0].message
+    assert findings[0].line == 6
+
+
+def test_r06_reports_architecture_checksum_mismatch_name() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+url="https://example.invalid/demo"
+source_x86_64=("a.tar.gz" "b.tar.gz")
+sha256sums_x86_64=('{STRONG}')
+"""
+    findings = by_rule(run_rules(source), "R06")
+
+    assert len(findings) == 1
+    assert "sha256sums_x86_64" in findings[0].message
 
 
 def test_r06_skip_on_vcs_source_is_expected() -> None:

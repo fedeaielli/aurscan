@@ -28,3 +28,29 @@ package() {
 }
 """
     assert by_rule(run_rules(source), "R14") == []
+
+
+def test_r14_flags_browser_profiles() -> None:
+    source = """\
+package() {
+  cp -r "$HOME/.config/google-chrome" "$pkgdir/usr/share/demo"
+  cp -r "$HOME/.config/chromium" "$pkgdir/usr/share/demo"
+  cp -r "$HOME/.config/BraveSoftware" "$pkgdir/usr/share/demo"
+  cp -r "$HOME/.mozilla" "$pkgdir/usr/share/demo"
+}
+"""
+    findings = by_rule(run_rules(source), "R14")
+
+    assert len(findings) == 4
+
+
+def test_r14_ignores_package_paths_containing_browser_names() -> None:
+    source = """\
+package() {
+  bsdtar -xf "$srcdir/google-chrome-$pkgver.deb" -C "$srcdir"
+  install -Dm644 "$srcdir/google-chrome.desktop" \
+    "$pkgdir/usr/share/applications/google-chrome.desktop"
+  ln -s /opt/google/chrome/google-chrome "$pkgdir/usr/bin/google-chrome-stable"
+}
+"""
+    assert by_rule(run_rules(source), "R14") == []

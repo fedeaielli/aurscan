@@ -36,6 +36,9 @@ _FUNCTION_HEADER_RE = re.compile(
     r"^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*\([ \t]*\)[ \t]*\{",
     re.MULTILINE,
 )
+_ARCH_VARIABLE_RE = re.compile(
+    r"^(source|sha256sums|sha512sums|md5sums|b2sums)_([A-Za-z0-9_]+)$"
+)
 
 
 @dataclass
@@ -219,6 +222,7 @@ def _text(node: Node) -> str:
 
 def _build_pkgbuild(analysis: _Analysis, source: str) -> Pkgbuild:
     variables = analysis.variables
+    sources_by_arch, checksums_by_arch = _arch_variables(variables)
     return Pkgbuild(
         pkgname=_as_list(variables.get("pkgname")),
         pkgver=_as_optional_str(variables.get("pkgver")),
@@ -241,10 +245,30 @@ def _build_pkgbuild(analysis: _Analysis, source: str) -> Pkgbuild:
         sha512sums=_as_list(variables.get("sha512sums")),
         md5sums=_as_list(variables.get("md5sums")),
         b2sums=_as_list(variables.get("b2sums")),
+        sources_by_arch=sources_by_arch,
+        checksums_by_arch=checksums_by_arch,
         functions=analysis.functions,
         variables=variables,
         raw=source,
     )
+
+
+def _arch_variables(
+    variables: dict[str, str | list[str]],
+) -> tuple[dict[str, list[str]], dict[str, dict[str, list[str]]]]:
+    """Split ``source_<arch>`` and checksum variables from the flat assignment map."""
+    sources: dict[str, list[str]] = {}
+    checksums: dict[str, dict[str, list[str]]] = {}
+    for name, value in variables.items():
+        match = _ARCH_VARIABLE_RE.match(name)
+        if match is None:
+            continue
+        kind, arch = match.groups()
+        if kind == "source":
+            sources[arch] = _as_list(value)
+        else:
+            checksums.setdefault(arch, {})[kind] = _as_list(value)
+    return sources, checksums
 
 
 def _as_list(value: str | list[str] | None) -> list[str]:

@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from pathlib import Path
 
+import pytest
+
+import aurscan.cache as cache_module
 from aurscan.cache import MAX_ENTRY_BYTES, ResponseCache, default_cache_dir
 
 URL = "https://example.invalid/PKGBUILD"
@@ -97,6 +101,29 @@ def test_put_failure_does_not_raise(tmp_path: Path) -> None:
     blocker.write_text("not a directory", encoding="utf-8")
 
     ResponseCache(blocker / "cache").put(URL, b"body")
+
+
+def test_temp_removal_failure_is_logged(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    cache = ResponseCache(tmp_path)
+
+    def failing_replace(*_args: object, **_kwargs: object) -> None:
+        raise OSError("replace failed")
+
+    def failing_unlink(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(cache_module.os, "replace", failing_replace)
+    monkeypatch.setattr(cache_module.os, "unlink", failing_unlink)
+
+    with caplog.at_level(logging.WARNING, logger="aurscan.cache"):
+        cache.put(URL, b"body")
+
+    assert "could not remove temporary cache file" in caplog.text
+    assert "denied" in caplog.text
 
 
 def test_default_cache_dir_uses_xdg(tmp_path: Path, monkeypatch) -> None:

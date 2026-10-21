@@ -70,7 +70,7 @@ def set_parse(monkeypatch: pytest.MonkeyPatch) -> Callable[[ParseResult], None]:
 
         monkeypatch.setattr(cli, "parse_package", fake)
         # Keep the history clone off by default; individual tests override it.
-        monkeypatch.setattr(cli, "clone_history", lambda _name: [])
+        monkeypatch.setattr(cli, "clone_history", lambda _name, **_kwargs: [])
 
     return _set
 
@@ -220,6 +220,43 @@ def test_help_exits_0(capsys: pytest.CaptureFixture[str]) -> None:
     assert "Usage" in capsys.readouterr().out
 
 
+def test_explain_rule_exits_0(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["--explain", "R01"]) == 0
+    out = capsys.readouterr().out
+    assert "R01 (high)" in out
+    assert "Flag curl/wget output executed by a shell." in out
+    assert "in_pipe_to" in out
+
+
+def test_explain_rule_is_case_insensitive(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["--explain", "r01"]) == 0
+    assert "R01 (high)" in capsys.readouterr().out
+
+
+def test_explain_history_rule(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["--explain", "M01"]) == 0
+    out = capsys.readouterr().out
+    assert "M01 (medium)" in out
+    assert "orphaned" in out
+
+
+def test_explain_unknown_rule_exits_3(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["--explain", "R99"]) == 3
+    assert "unknown rule: R99" in capsys.readouterr().err
+
+
+def test_explain_missing_value_is_a_usage_error(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert cli.main(["--explain"]) == 3
+    assert "requires an argument" in capsys.readouterr().err
+
+
+def test_options_without_a_package_exit_3(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["--json"]) == 3
+    assert "missing package name" in capsys.readouterr().err
+
+
 @respx.mock
 def test_fetch_failure_exits_3(capsys: pytest.CaptureFixture[str]) -> None:
     respx.get(url__startswith=RPC_URL).mock(return_value=httpx.Response(404))
@@ -282,6 +319,28 @@ def test_cache_reuses_a_response(
 
 
 @respx.mock
+def test_timeout_is_forwarded_to_parse_and_history(
+    rpc_route: respx.Route,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, float] = {}
+
+    def fake_parse(_name: str, *, timeout: float) -> ParseResult:
+        captured["parse"] = timeout
+        return _parse_result(BENIGN)
+
+    def fake_history(_name: str, *, timeout: float) -> list[Commit]:
+        captured["history"] = timeout
+        return []
+
+    monkeypatch.setattr(cli, "parse_package", fake_parse)
+    monkeypatch.setattr(cli, "clone_history", fake_history)
+
+    assert cli.main(["demo", "--timeout", "42"]) == 0
+    assert captured == {"parse": 42.0, "history": 42.0}
+
+
+@respx.mock
 def test_history_findings_are_reported(
     rpc_route: respx.Route,
     set_parse: Callable[[ParseResult], None],
@@ -299,7 +358,7 @@ def test_history_findings_are_reported(
         content={"PKGBUILD": REVIEW_PKGBUILD},
         tree_files=["PKGBUILD"],
     )
-    monkeypatch.setattr(cli, "clone_history", lambda _name: [commit])
+    monkeypatch.setattr(cli, "clone_history", lambda _name, **_kwargs: [commit])
 
     assert cli.main(["demo"]) == 1
     out = capsys.readouterr().out
@@ -315,7 +374,7 @@ def test_no_history_skips_the_history_clone(
 ) -> None:
     set_parse(_parse_result(BENIGN))
 
-    def _unexpected(_name: str) -> list[Commit]:
+    def _unexpected(_name: str, **_kwargs: object) -> list[Commit]:
         raise AssertionError("history must not run with --no-history")
 
     monkeypatch.setattr(cli, "clone_history", _unexpected)
@@ -332,7 +391,7 @@ def test_history_failure_is_an_analysis_note(
 ) -> None:
     set_parse(_parse_result(BENIGN))
 
-    def _fail(_name: str) -> list[Commit]:
+    def _fail(_name: str, **_kwargs: object) -> list[Commit]:
         raise HistoryError("git log failed")
 
     monkeypatch.setattr(cli, "clone_history", _fail)

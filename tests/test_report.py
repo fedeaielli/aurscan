@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from rich.console import Console
 
 from aurscan.models import Report, Verdict
 from aurscan.parse import parse_pkgbuild
-from aurscan.report import build_report, highest_verdict, render_human, render_json
+from aurscan.report import (
+    build_report,
+    highest_verdict,
+    render_human,
+    render_json,
+    score_bar,
+)
 from aurscan.rules import RuleContext, registry
 from tests.rules_utils import make_meta
 
@@ -81,6 +88,35 @@ def _empty_report(
         errors=list(errors or []),
         dependencies=[],
         dep_of=dep_of,
+    )
+
+
+def test_score_bar_is_proportional() -> None:
+    assert score_bar(0, 100) == "\u2591" * 20
+    assert score_bar(50, 100) == "\u2588" * 10 + "\u2591" * 10
+    assert score_bar(72, 100) == "\u2588" * 14 + "\u2591" * 6
+    assert score_bar(100, 100) == "\u2588" * 20
+    assert score_bar(120, 100) == "\u2588" * 20
+    assert score_bar(-5, 100) == "\u2591" * 20
+
+
+def test_score_bar_rejects_invalid_dimensions() -> None:
+    with pytest.raises(ValueError, match="maximum"):
+        score_bar(1, 0)
+    with pytest.raises(ValueError, match="width"):
+        score_bar(1, 100, width=0)
+
+
+def test_risk_line_includes_score_bar() -> None:
+    report = _empty_report("root", verdict=Verdict.RISKY, score=72)
+    console = Console(record=True, width=120)
+
+    render_human(report, console)
+
+    assert (
+        "Risk: RISKY (72/100) \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588"
+        "\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2591"
+        in console.export_text()
     )
 
 

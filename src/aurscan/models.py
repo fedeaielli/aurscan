@@ -88,6 +88,8 @@ class Pkgbuild(AurscanModel):
     sha512sums: list[str]
     md5sums: list[str]
     b2sums: list[str]
+    sources_by_arch: dict[str, list[str]] = Field(default_factory=dict)
+    checksums_by_arch: dict[str, dict[str, list[str]]] = Field(default_factory=dict)
     functions: dict[str, list[Command]]
     variables: dict[str, str | list[str]]
     raw: str

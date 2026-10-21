@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from aurscan.errors import HistoryError
+import aurscan.history as history
+from aurscan.errors import CloneError, HistoryError
 from aurscan.history import (
     Commit,
     clone_history,
@@ -199,3 +200,29 @@ def test_maintainer_change_requires_orphan_and_author_change(tmp_path: Path) -> 
 def test_clone_history_failure_raises_history_error(tmp_path: Path) -> None:
     with pytest.raises(HistoryError, match="could not clone history"):
         clone_history("demo", _git_url=(tmp_path / "missing").as_uri())
+
+
+def test_clone_history_forwards_timeout_to_clone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_clone(
+        _name: str,
+        _dest: object,
+        *,
+        timeout: float = 0.0,
+        url: str | None = None,
+        depth: int = 1,
+    ) -> None:
+        captured["timeout"] = timeout
+        captured["url"] = url
+        captured["depth"] = depth
+        raise CloneError("stop")
+
+    monkeypatch.setattr(history, "clone_package", fake_clone)
+
+    with pytest.raises(HistoryError, match="could not clone history"):
+        clone_history("demo", timeout=7.5)
+
+    assert captured == {"timeout": 7.5, "url": None, "depth": 11}

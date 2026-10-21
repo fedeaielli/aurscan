@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
+from email.utils import formatdate
 from pathlib import Path
 from typing import Any
 
@@ -116,6 +118,79 @@ def test_fetch_meta_retries_transient_errors(
     assert info.name == "demo"
     assert route.call_count == 4
     assert len(sleeps) == 3
+
+
+@respx.mock
+def test_fetch_meta_honours_retry_after_seconds(
+    make_package: Callable[..., dict[str, Any]],
+) -> None:
+    route = respx.get(url__startswith=RPC_URL).mock(
+        side_effect=[
+            httpx.Response(429, headers={"Retry-After": "5"}),
+            httpx.Response(200, json={"results": [make_package()]}),
+        ]
+    )
+    sleeps: list[float] = []
+
+    info = fetch_meta("demo", sleep=sleeps.append)
+
+    assert info.name == "demo"
+    assert route.call_count == 2
+    assert sleeps == [5.0]
+
+
+@respx.mock
+def test_fetch_meta_honours_retry_after_http_date(
+    make_package: Callable[..., dict[str, Any]],
+) -> None:
+    retry_at = formatdate(time.time() + 30, usegmt=True)
+    respx.get(url__startswith=RPC_URL).mock(
+        side_effect=[
+            httpx.Response(429, headers={"Retry-After": retry_at}),
+            httpx.Response(200, json={"results": [make_package()]}),
+        ]
+    )
+    sleeps: list[float] = []
+
+    fetch_meta("demo", sleep=sleeps.append)
+
+    assert len(sleeps) == 1
+    assert sleeps[0] == pytest.approx(30.0, abs=2.0)
+
+
+@respx.mock
+def test_fetch_meta_invalid_retry_after_falls_back_to_backoff(
+    make_package: Callable[..., dict[str, Any]],
+) -> None:
+    respx.get(url__startswith=RPC_URL).mock(
+        side_effect=[
+            httpx.Response(429, headers={"Retry-After": "not-a-date"}),
+            httpx.Response(200, json={"results": [make_package()]}),
+        ]
+    )
+    sleeps: list[float] = []
+
+    fetch_meta("demo", sleep=sleeps.append)
+
+    assert len(sleeps) == 1
+    assert 0.5 <= sleeps[0] <= 0.75
+
+
+@respx.mock
+def test_fetch_meta_caps_retry_after(
+    make_package: Callable[..., dict[str, Any]],
+) -> None:
+    respx.get(url__startswith=RPC_URL).mock(
+        side_effect=[
+            httpx.Response(429, headers={"Retry-After": "100000"}),
+            httpx.Response(200, json={"results": [make_package()]}),
+        ]
+    )
+    sleeps: list[float] = []
+
+    fetch_meta("demo", sleep=sleeps.append)
+
+    assert sleeps == [120.0]
 
 
 @respx.mock

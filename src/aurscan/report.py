@@ -36,6 +36,21 @@ _VERDICT_ORDER: dict[Verdict, int] = {
     Verdict.RISKY: 2,
 }
 
+SCORE_BAR_WIDTH = 20
+_BAR_FILLED = "\u2588"
+_BAR_EMPTY = "\u2591"
+
+
+def score_bar(score: int, maximum: int, width: int = SCORE_BAR_WIDTH) -> str:
+    """Return a fixed-width bar whose filled portion follows ``score``/``maximum``."""
+    if maximum <= 0:
+        raise ValueError("maximum must be positive")
+    if width < 1:
+        raise ValueError("width must be at least 1")
+    capped = max(0, min(score, maximum))
+    filled = round(capped / maximum * width)
+    return _BAR_FILLED * filled + _BAR_EMPTY * (width - filled)
+
 
 def build_report(
     package: PackageInfo,
@@ -118,7 +133,8 @@ def _render_risk(report: Report, console: Console) -> None:
     maximum = load_scoring_config().max_score
     line = Text("Risk: ", style="bold")
     line.append(report.verdict.value.upper(), style=style)
-    line.append(f"  ({report.score}/{maximum})")
+    line.append(f" ({report.score}/{maximum}) ")
+    line.append(score_bar(report.score, maximum), style=style)
     console.print(line)
 
 

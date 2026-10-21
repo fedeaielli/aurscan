@@ -7,6 +7,7 @@ import random
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import urlencode
 
@@ -22,12 +23,17 @@ USER_AGENT = "aurscan/0.1 (+contact)"
 RPC_URL = "https://aur.archlinux.org/rpc/v5/info"
 MAX_BODY_BYTES = 1024 * 1024
 MAX_RETRIES = 3
+MAX_RETRY_AFTER_SECONDS = 120.0
 BATCH_SIZE = 50
 BATCH_PAUSE_SECONDS = 1.0
 
 
 class _RetryableFailure(Exception):
-    """Internal marker for failures worth retrying."""
+    """Internal marker for failures worth retrying, with an optional delay."""
+
+    def __init__(self, message: str, *, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 def http_get(
@@ -74,7 +80,8 @@ def _get_with_retries(
         except _RetryableFailure as exc:
             last_message = str(exc)
             if attempt < MAX_RETRIES:
-                sleep(_backoff(attempt))
+                delay = exc.retry_after if exc.retry_after is not None else _backoff(attempt)
+                sleep(delay)
     raise FetchError(f"request to {url} failed after {MAX_RETRIES + 1} attempts: {last_message}")
 
 
@@ -97,7 +104,12 @@ def _get_once(client: httpx.Client, url: str, *, timeout: float) -> bytes:
                     chunks.append(chunk)
                 return b"".join(chunks)
             if status == 429 or 500 <= status < 600:
-                raise _RetryableFailure(f"HTTP {status} from {url}")
+                retry_after = (
+                    _retry_after_seconds(response.headers.get("retry-after"))
+                    if status == 429
+                    else None
+                )
+                raise _RetryableFailure(f"HTTP {status} from {url}", retry_after=retry_after)
             raise FetchError(f"HTTP {status} from {url}")
     except httpx.HTTPError as exc:
         raise _RetryableFailure(f"{type(exc).__name__}: {exc}") from exc
@@ -107,6 +119,34 @@ def _backoff(attempt: int) -> float:
     base = 0.5 * float(2**attempt)
     jitter: float = random.uniform(0.0, 0.25)
     return base + jitter
+
+
+def _retry_after_seconds(value: str | None) -> float | None:
+    """Parse a ``Retry-After`` header into seconds, or ``None`` when unusable.
+
+    Both delta-seconds and HTTP-date forms are accepted. The result is clamped
+    so a hostile or broken server cannot stall the scan indefinitely.
+    """
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        seconds = float(text)
+    except ValueError:
+        try:
+            moment = parsedate_to_datetime(text)
+        except (TypeError, ValueError):
+            return None
+        if moment is None:
+            return None
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+        seconds = (moment - datetime.now(UTC)).total_seconds()
+    if seconds < 0:
+        return None
+    return min(seconds, MAX_RETRY_AFTER_SECONDS)
 
 
 def fetch_meta(

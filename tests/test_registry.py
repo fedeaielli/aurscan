@@ -39,6 +39,19 @@ def test_builtin_rules_are_registered() -> None:
     assert {rule.rule_id for rule in registry.rules} == ALL_RULE_IDS
 
 
+def test_explain_covers_every_catalogue_rule() -> None:
+    for rule_id in ALL_RULE_IDS | {"M01"}:
+        info = registry.explain(rule_id)
+        assert info is not None, rule_id
+        severity, description = info
+        assert isinstance(severity, Severity)
+        assert description
+
+    assert registry.describe("R01")
+    assert registry.get("M01") is None
+    assert registry.explain("R99") is None
+
+
 def test_findings_are_deduplicated_and_sorted() -> None:
     rules = RuleRegistry()
 

@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from aurscan.errors import CloneError
 from aurscan.validation import validate_package_name
 
 DEFAULT_TIMEOUT_SECONDS = 60.0
 MAX_CLONE_BYTES = 50 * 1024 * 1024
+
+_LOGGER = logging.getLogger(__name__)
 
 _CLONE_FLAGS = ("--single-branch", "--no-tags", "--no-recurse-submodules")
 _STRIPPED_GIT_ENV = frozenset(
@@ -102,10 +107,29 @@ def git_env() -> dict[str, str]:
 
 
 def _remove_clone(dest: Path) -> None:
-    shutil.rmtree(dest, ignore_errors=True)
+    """Remove a failed or oversized clone, logging any cleanup failure."""
+    if not os.path.lexists(dest):
+        return
+    shutil.rmtree(dest, onexc=_log_removal_error)
+
+
+def _log_removal_error(
+    function: Callable[..., Any], path: str, error: BaseException
+) -> None:
+    _LOGGER.warning(
+        "could not remove %s while cleaning up a clone (%s): %s",
+        path,
+        getattr(function, "__name__", function),
+        error,
+    )
 
 
 def _directory_size(root: Path, *, max_bytes: int) -> int:
+    """Return the total size of regular files under ``root``.
+
+    Traversal stops as soon as ``max_bytes`` is exceeded: callers only need to
+    know whether the clone is too large, not its exact size.
+    """
     total = 0
     stack = [root]
     while stack:

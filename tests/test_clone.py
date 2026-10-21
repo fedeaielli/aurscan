@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import logging
+import os
+import shutil
 import subprocess
+import types
+from collections.abc import Callable
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
 
+import aurscan.clone as clone
 from aurscan.clone import clone_package
 from aurscan.errors import CloneError
 
@@ -97,3 +104,60 @@ def test_clone_accepts_install_script(tmp_path: Path) -> None:
     clone_package("demo", dest, url=repo.as_uri())
 
     assert (dest / "demo.install").read_text(encoding="utf-8") == "post_install() { :; }\n"
+
+
+class _FakeEntry:
+    """Minimal ``os.DirEntry`` stand-in for the size short-circuit test."""
+
+    def __init__(self, path: str, size: int) -> None:
+        self.path = path
+        self._size = size
+
+    def is_symlink(self) -> bool:
+        return False
+
+    def is_dir(self, *, follow_symlinks: bool = False) -> bool:
+        return False
+
+    def is_file(self, *, follow_symlinks: bool = False) -> bool:
+        return True
+
+    def stat(self, *, follow_symlinks: bool = False) -> types.SimpleNamespace:
+        return types.SimpleNamespace(st_size=self._size)
+
+
+def test_directory_size_short_circuits_after_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entries = [_FakeEntry("first", 2048), _FakeEntry("second", 2048)]
+
+    def fake_scandir(_path: object) -> object:
+        return nullcontext(iter(entries))
+
+    monkeypatch.setattr(clone.os, "scandir", fake_scandir)
+
+    # Only the first file is counted: traversal must stop once max_bytes is exceeded.
+    assert clone._directory_size(tmp_path, max_bytes=1024) == 2048
+
+
+def test_remove_clone_logs_rmtree_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    dest = tmp_path / "clone"
+    dest.mkdir()
+
+    def failing_rmtree(
+        path: object, *, onexc: Callable[..., object] | None = None
+    ) -> None:
+        assert onexc is not None
+        onexc(os.unlink, str(path), PermissionError("denied"))
+
+    monkeypatch.setattr(shutil, "rmtree", failing_rmtree)
+
+    with caplog.at_level(logging.WARNING, logger="aurscan.clone"):
+        clone._remove_clone(dest)
+
+    assert "could not remove" in caplog.text
+    assert "denied" in caplog.text
