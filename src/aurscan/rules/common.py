@@ -421,11 +421,11 @@ def is_device_target(path: str) -> bool:
     return clean in {"/dev/null", "/dev/stdout", "/dev/stderr"} or clean.startswith("/dev/fd/")
 
 
-def iter_string_literals(text: str, *, skip_comments: bool = True) -> Iterator[tuple[str, int]]:
-    """Yield ``(literal, line)`` for quoted strings in raw source."""
+def iter_string_literals(text: str) -> Iterator[tuple[str, int]]:
+    """Yield ``(literal, line)`` for quoted strings in raw source, skipping comments."""
     for match in _STRING_RE.finditer(text):
         line = text.count("\n", 0, match.start()) + 1
-        if skip_comments and _line_text(text, line).lstrip().startswith("#"):
+        if _line_text(text, line).lstrip().startswith("#"):
             continue
         literal = _strip_quotes(match.group(0))
         yield literal, line

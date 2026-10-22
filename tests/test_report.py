@@ -11,6 +11,7 @@ from aurscan.models import Report, Severity, Verdict
 from aurscan.parse import parse_pkgbuild
 from aurscan.report import (
     _iter_reports,
+    _value,
     build_report,
     highest_verdict,
     render_human,
@@ -134,6 +135,11 @@ def test_render_human_uses_injected_scoring_config() -> None:
     render_human(report, console, config=custom)
 
     assert "Risk: REVIEW (5/10)" in console.export_text()
+
+
+def test_value_truncates_metadata_to_300_characters() -> None:
+    assert _value("x" * 400).plain == "x" * 299 + "\u2026"
+    assert _value("").plain == "\u2014"
 
 
 def test_highest_verdict_includes_nested_dependencies() -> None:

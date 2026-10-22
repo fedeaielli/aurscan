@@ -253,10 +253,10 @@ def _format_datetime(value: datetime) -> str:
     return value.strftime("%Y-%m-%d %H:%M UTC")
 
 
-def _value(text: str | None, *, placeholder: str = "\u2014", max_length: int = 300) -> Text:
+def _value(text: str | None, *, placeholder: str = "\u2014") -> Text:
     if not text:
         return Text(placeholder, style="dim")
-    cleaned = _safe(text, max_length)
+    cleaned = _safe(text, 300)
     return Text(cleaned or placeholder, style="dim" if not cleaned else "")
 
 
