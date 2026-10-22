@@ -1,4 +1,4 @@
-# Maintainer: aurscan contributors
+# Maintainer: fedeaielli - https://github.com/fedeaielli
 pkgname=aurscan
 pkgver=0.1.0
 pkgrel=1
