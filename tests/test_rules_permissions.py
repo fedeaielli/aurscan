@@ -25,6 +25,52 @@ package() {
     ]
 
 
+def test_r09_ignores_modes_that_remove_privilege_bits() -> None:
+    source = """\
+package() {
+  chmod u-s "$pkgdir/usr/bin/a"
+  chmod g-s "$pkgdir/usr/bin/b"
+  chmod a-s "$pkgdir/usr/bin/c"
+  chmod ug-s "$pkgdir/usr/bin/d"
+  chmod -R u-s "$pkgdir/usr/share/code"
+}
+"""
+    assert by_rule(run_rules(source), "R09") == []
+
+
+def test_r09_applies_symbolic_clauses_in_order() -> None:
+    source = """\
+package() {
+  chmod u+s,u-s "$pkgdir/usr/bin/never"
+  chmod u-s,u+s "$pkgdir/usr/bin/final"
+  chmod u+s,g-s "$pkgdir/usr/bin/only-user"
+  chmod u=rwxs "$pkgdir/usr/bin/exact"
+  chmod u=rwx "$pkgdir/usr/bin/cleared"
+}
+"""
+    findings = by_rule(run_rules(source), "R09")
+
+    assert [(finding.line, finding.severity) for finding in findings] == [
+        (3, Severity.HIGH),
+        (4, Severity.HIGH),
+        (5, Severity.HIGH),
+    ]
+
+
+def test_r09_ignores_targets_without_privilege_bits() -> None:
+    source = """\
+package() {
+  chmod o+s "$pkgdir/usr/bin/others"
+  chmod +s "$pkgdir/usr/bin/everyone"
+}
+"""
+    findings = by_rule(run_rules(source), "R09")
+
+    assert [(finding.line, finding.severity) for finding in findings] == [
+        (3, Severity.HIGH)
+    ]
+
+
 def test_r10_flags_writes_outside_pkgdir_in_package_only() -> None:
     source = """\
 build() {

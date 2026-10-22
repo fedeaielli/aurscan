@@ -18,6 +18,8 @@ from aurscan.rules.common import (
 )
 
 _OCTAL_MODE_RE = re.compile(r"^[0-7]{4}$")
+_MODE_TARGETS = "ugoa"
+_MODE_PERMISSIONS = "rwxXst"
 
 
 @register("R09", Severity.HIGH)
@@ -25,7 +27,8 @@ def r09_privilege_bits(ctx: RuleContext) -> list[Finding]:
     """Flag ``chmod`` calls that set the setuid or setgid bit.
 
     Setuid is high. Setgid-only is low, matching the plan's allowance for
-    group-shared helpers. A bare ``chown root`` is not flagged on its own.
+    group-shared helpers. Modes that remove the bit (``u-s``) or clear it with
+    ``=`` are ignored, and a bare ``chown root`` is not flagged on its own.
     """
     findings: list[Finding] = []
     for file, function, command in iter_commands(ctx):
@@ -94,17 +97,47 @@ def _mode_bits(command: Command) -> tuple[bool, bool]:
         first = int(mode[0], 8)
         return bool(first & 4), bool(first & 2)
 
+    return _symbolic_mode_bits(mode)
+
+
+def _symbolic_mode_bits(mode: str) -> tuple[bool, bool]:
+    """Apply symbolic mode clauses in order and return the final bit state.
+
+    ``chmod u-s`` removes a bit and must not be reported. ``+`` and ``=`` set the
+    bit only when the permission list contains ``s``; ``=`` without ``s`` clears
+    it. The ``o`` target does not affect the setuid or setgid bits.
+    """
     setuid = False
     setgid = False
     for clause in mode.split(","):
-        clause = clause.lstrip("+")
-        if "s" not in clause:
-            continue
-        if clause.startswith("u"):
-            setuid = True
-        elif clause.startswith("g"):
-            setgid = True
-        else:
-            setuid = True
-            setgid = True
+        target, operations = _parse_clause(clause)
+        users = target or "a"
+        affects_uid = "u" in users or "a" in users
+        affects_gid = "g" in users or "a" in users
+        for operator, permissions in operations:
+            if operator == "=":
+                if affects_uid:
+                    setuid = "s" in permissions
+                if affects_gid:
+                    setgid = "s" in permissions
+            elif "s" in permissions:
+                if affects_uid:
+                    setuid = operator == "+"
+                if affects_gid:
+                    setgid = operator == "+"
     return setuid, setgid
+
+
+def _parse_clause(clause: str) -> tuple[str, list[tuple[str, str]]]:
+    """Split one symbolic clause into target letters and ordered operations."""
+    clause = clause.strip()
+    target = clause[: len(clause) - len(clause.lstrip(_MODE_TARGETS))]
+    operations: list[tuple[str, str]] = []
+    rest = clause[len(target) :]
+    while rest and rest[0] in "+-=":
+        operator = rest[0]
+        rest = rest[1:]
+        permissions = rest[: len(rest) - len(rest.lstrip(_MODE_PERMISSIONS))]
+        rest = rest[len(permissions) :]
+        operations.append((operator, permissions))
+    return target, operations

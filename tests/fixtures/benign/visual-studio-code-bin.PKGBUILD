@@ -17,4 +17,5 @@ package() {
   cp -r "$srcdir/vscode/." "$pkgdir/opt/visual-studio-code/"
   install -Dm644 "$srcdir/vscode/resources/app/resources/linux/code.png" "$pkgdir/usr/share/pixmaps/code.png"
   ln -s /opt/visual-studio-code/bin/code "$pkgdir/usr/bin/code"
+  chmod u-s "$pkgdir/usr/share/code/chrome-sandbox"
 }
