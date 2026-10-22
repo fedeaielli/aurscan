@@ -13,6 +13,7 @@ import re
 import time
 from collections import deque
 from collections.abc import Callable
+from functools import partial
 
 from aurscan.cache import ResponseCache
 from aurscan.errors import AurscanError, InvalidPackageNameError
@@ -97,8 +98,8 @@ def scan_dependencies(
         raise ValueError("max_deps must not be negative")
 
     pause = sleep if sleep is not None else _sleep
-    fetch = _fetch if _fetch is not None else _make_fetcher(timeout=timeout, cache=cache)
-    analyze = _analyze if _analyze is not None else _make_analyzer(timeout=timeout)
+    fetch = _fetch if _fetch is not None else partial(_fetch_meta, timeout=timeout, cache=cache)
+    analyze = _analyze if _analyze is not None else partial(analyze_package, timeout=timeout)
 
     visited: set[str] = {root_report.package.name}
     scanned: list[Report] = []
@@ -160,19 +161,11 @@ def _dependency_name(entry: str) -> str | None:
         return None
 
 
-def _make_fetcher(*, timeout: float, cache: ResponseCache | None) -> FetchFunc:
-    def _fetch(name: str) -> PackageInfo | None:
-        found = fetch_meta_many([name], timeout=timeout, cache=cache)
-        return found.get(name)
-
-    return _fetch
-
-
-def _make_analyzer(*, timeout: float) -> AnalyzeFunc:
-    def _analyze(meta: PackageInfo) -> Report:
-        return analyze_package(meta, timeout=timeout)
-
-    return _analyze
+def _fetch_meta(
+    name: str, *, timeout: float, cache: ResponseCache | None
+) -> PackageInfo | None:
+    """Return metadata for one package, or ``None`` when the AUR does not host it."""
+    return fetch_meta_many([name], timeout=timeout, cache=cache).get(name)
 
 
 def _failed_report(meta: PackageInfo, *, message: str) -> Report:

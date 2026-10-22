@@ -294,6 +294,36 @@ def test_scan_reuses_the_http_cache(
     assert seen == ["b", "b"]
 
 
+@respx.mock
+def test_default_partials_forward_timeout_to_fetch_and_analyze(
+    make_package: Callable[..., dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    respx.get(url__startswith=RPC_URL).mock(
+        return_value=httpx.Response(200, json={"results": [make_package(Name="b")]})
+    )
+    parse_timeouts: list[float] = []
+
+    def fake_parse(name: str, *, timeout: float = 10.0) -> ParseResult:
+        parse_timeouts.append(timeout)
+        return ParseResult(
+            pkgbuild=None,
+            install_scripts=[],
+            parse_failed=True,
+            findings=[],
+            errors=[],
+            cloned_files=[],
+        )
+
+    monkeypatch.setattr(deps, "parse_package", fake_parse)
+    root = _report(make_meta(name="a", depends=["b"]))
+
+    result = scan_dependencies(root, 1, timeout=3.5, sleep=lambda _seconds: None)
+
+    assert [item.package.name for item in result] == ["b"]
+    assert parse_timeouts == [3.5]
+
+
 def test_analyze_package_runs_static_rules(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

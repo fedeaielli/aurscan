@@ -78,18 +78,18 @@ def build_report(
 def highest_verdict(report: Report) -> Verdict:
     """Return the highest verdict among ``report`` and its dependencies."""
     return max(
-        (item.verdict for item in iter_reports(report)),
+        (item.verdict for item, _depth in _iter_reports(report)),
         key=_VERDICT_ORDER.__getitem__,
     )
 
 
-def iter_reports(report: Report) -> Iterator[Report]:
-    """Yield ``report`` and every nested dependency breadth-first."""
-    queue: deque[Report] = deque([report])
+def _iter_reports(report: Report, depth: int = 0) -> Iterator[tuple[Report, int]]:
+    """Yield ``report`` and every nested dependency breadth-first with its depth."""
+    queue: deque[tuple[Report, int]] = deque([(report, depth)])
     while queue:
-        current = queue.popleft()
-        yield current
-        queue.extend(current.dependencies)
+        current, level = queue.popleft()
+        yield current, level
+        queue.extend((child, level + 1) for child in current.dependencies)
 
 
 def render_human(
@@ -213,8 +213,11 @@ def _render_dependencies(dependencies: Sequence[Report], console: Console) -> No
     table.add_column("score", justify="right", no_wrap=True)
     table.add_column("verdict", no_wrap=True)
 
+    # Top-level dependencies are at depth 1; nested ones count up from there.
+    entries = [pair for item in dependencies for pair in _iter_reports(item, depth=1)]
+
     highest: Report | None = None
-    for dependency, depth in _walk_dependencies(dependencies):
+    for dependency, depth in entries:
         table.add_row(
             Text(_safe(dependency.package.name, 255)),
             Text(_safe(dependency.dep_of or "\u2014", 255)),
@@ -236,7 +239,7 @@ def _render_dependencies(dependencies: Sequence[Report], console: Console) -> No
 
     notes = [
         (dependency.package.name, error)
-        for dependency, _depth in _walk_dependencies(dependencies)
+        for dependency, _depth in entries
         for error in dependency.errors
     ]
     if notes:
@@ -244,16 +247,6 @@ def _render_dependencies(dependencies: Sequence[Report], console: Console) -> No
         console.print(Text("Dependency notes", style="bold yellow"))
         for name, error in notes:
             console.print(f"  {_safe(name, 255)}: {_safe(error, 500)}", style="yellow")
-
-
-def _walk_dependencies(
-    dependencies: Sequence[Report], depth: int = 1
-) -> Iterator[tuple[Report, int]]:
-    queue: deque[tuple[Report, int]] = deque((item, depth) for item in dependencies)
-    while queue:
-        dependency, level = queue.popleft()
-        yield dependency, level
-        queue.extend((child, level + 1) for child in dependency.dependencies)
 
 
 def _format_datetime(value: datetime) -> str:

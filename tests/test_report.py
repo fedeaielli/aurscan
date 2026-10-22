@@ -10,6 +10,7 @@ from rich.console import Console
 from aurscan.models import Report, Severity, Verdict
 from aurscan.parse import parse_pkgbuild
 from aurscan.report import (
+    _iter_reports,
     build_report,
     highest_verdict,
     render_human,
@@ -147,6 +148,26 @@ def test_highest_verdict_includes_nested_dependencies() -> None:
     assert highest_verdict(child) == Verdict.RISKY
 
 
+def test_iter_reports_yields_every_dependency_with_its_depth() -> None:
+    root = _empty_report("root")
+    first = _empty_report("first", dep_of="root")
+    second = _empty_report("second", dep_of="root")
+    nested = _empty_report("nested", dep_of="first")
+    first.dependencies.append(nested)
+    root.dependencies.extend([first, second])
+
+    assert [(item.package.name, depth) for item, depth in _iter_reports(root)] == [
+        ("root", 0),
+        ("first", 1),
+        ("second", 1),
+        ("nested", 2),
+    ]
+    assert [(item.package.name, depth) for item, depth in _iter_reports(first, 3)] == [
+        ("first", 3),
+        ("nested", 4),
+    ]
+
+
 def test_json_dependencies_are_nested() -> None:
     root = _empty_report("root")
     dependency = _empty_report("bar-helper", score=12, dep_of="root")
@@ -184,4 +205,11 @@ def test_human_dependency_table_reports_highest_risk_and_notes() -> None:
     assert "Highest dependency risk: nested (72)" in output
     assert "Dependency notes" in output
     assert "could not clone nested: timeout" in output
+
+    depths = {
+        row[0]: row[2]
+        for row in map(str.split, output.splitlines())
+        if len(row) == 5 and row[0] in {"bar-helper", "nested"}
+    }
+    assert depths == {"bar-helper": "1", "nested": "2"}
 
