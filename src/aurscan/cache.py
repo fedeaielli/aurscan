@@ -22,12 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class ResponseCache:
-    """Cache HTTP bodies on disk, keyed by URL.
-
-    Entries older than ``ttl`` seconds are reported as misses. Writes go to a
-    temporary file and are atomically renamed into place, so readers never see a
-    partial body. Cache failures are best-effort and never raise.
-    """
+    """On-disk HTTP body cache keyed by URL, with TTL and atomic writes."""
 
     def __init__(
         self,
@@ -66,7 +61,7 @@ class ResponseCache:
         return data
 
     def put(self, url: str, data: bytes) -> None:
-        """Store ``data`` for ``url``. Failures are silently ignored."""
+        """Store ``data`` for ``url``; write failures are ignored (cleanup failures logged)."""
         path = self._entry_path(url)
         temporary: str | None = None
         try:

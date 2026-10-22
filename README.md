@@ -208,7 +208,7 @@ hidden by many low-severity ones. Weights and thresholds live in
 | `R06` | low | `SKIP` checksum on a non-VCS source, or source/checksum count mismatch. |
 | `R07` | medium | Network command in `prepare`, `build`, or `package`. |
 | `R08` | high | Cron, shell-startup, loader, autostart, or service persistence. |
-| `R09` | high | `chmod` setting the setuid or setgid bit. |
+| `R09` | high | `chmod` that sets the setuid or setgid bit (removing them is not flagged). |
 | `R10` | medium | Absolute write destination in `package()` outside `$pkgdir`. |
 | `R11` | high | Risky command inside an `.install` hook. |
 | `R12` | medium | High-entropy strings, escape runs, or escape-heavy `printf`. |
@@ -228,9 +228,10 @@ Run `aurscan --explain RULE_ID` for the full description of any rule.
 - If the repository cannot be cloned, the report falls back to metadata-only
   analysis and says so. Content rules and history checks are then unavailable.
 - With history enabled the clone includes the last 10 commits, so it can be
-  larger than a content-only clone. If it exceeds the size limit or times out,
-  aurscan retries once at depth 1 without history and says so in the analysis
-  notes.
+  larger than a content-only clone. If the repository exceeds 50 MiB or the
+  clone times out, aurscan retries once at depth 1 without history: analysis
+  continues on content only, and `history skipped: ...` appears in the report
+  errors.
 - Architecture-specific variables such as `source_x86_64` and
   `sha256sums_x86_64` are tracked explicitly, but arbitrary computed variable
   names are not resolved.
