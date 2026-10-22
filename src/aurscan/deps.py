@@ -9,6 +9,7 @@ the root package and never run git history analysis.
 
 from __future__ import annotations
 
+import re
 import time
 from collections import deque
 from collections.abc import Callable
@@ -150,12 +151,7 @@ def scan_dependencies(
 
 def _dependency_name(entry: str) -> str | None:
     """Strip a version constraint or description and validate the name."""
-    token = entry.strip()
-    for index, char in enumerate(token):
-        if char in "<>=:":
-            token = token[:index]
-            break
-    token = token.strip()
+    token = re.split(r"[<>=:]", entry, maxsplit=1)[0].strip()
     if not token:
         return None
     try:

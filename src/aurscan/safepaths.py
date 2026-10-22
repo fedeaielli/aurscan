@@ -6,14 +6,11 @@ import os
 import stat
 from collections.abc import Iterator
 from pathlib import Path, PurePosixPath
-from typing import Literal
 
 from aurscan.errors import BinaryFileError, FileTooLargeError, SafetyError, UnsafePathError
 
 MAX_TEXT_BYTES = 1024 * 1024
 _MAX_ENTRIES = 10_000
-
-_EntryKind = Literal["file", "dir", "symlink", "other"]
 
 
 def resolve_within(root: Path, relative: str) -> Path:
@@ -78,41 +75,38 @@ def read_text_safe(
 
 def iter_regular_files(root: Path, *, max_entries: int = _MAX_ENTRIES) -> Iterator[Path]:
     """Yield regular files under ``root``, never following symlinks."""
-    for path, kind in _walk(root, max_entries=max_entries):
-        if kind == "file":
+    for path in _walk_entries(root, max_entries=max_entries):
+        if _is_regular_file(path):
             yield path
 
 
 def list_symlinks(root: Path, *, max_entries: int = _MAX_ENTRIES) -> list[Path]:
     """Return symlink paths under ``root`` without following them."""
-    return [path for path, kind in _walk(root, max_entries=max_entries) if kind == "symlink"]
+    return [path for path in _walk_entries(root, max_entries=max_entries) if path.is_symlink()]
 
 
-def _walk(root: Path, *, max_entries: int) -> Iterator[tuple[Path, _EntryKind]]:
+def _walk_entries(root: Path, *, max_entries: int) -> Iterator[Path]:
+    """Yield every entry under ``root`` without descending into symlinks."""
     root_path = _root_path(root)
-    stack = [root_path]
     seen = 0
-    while stack:
-        try:
-            with os.scandir(stack.pop()) as entries:
-                for entry in entries:
-                    seen += 1
-                    if seen > max_entries:
-                        raise SafetyError(f"more than {max_entries} entries under {root_path}")
-                    try:
-                        if entry.is_symlink():
-                            yield Path(entry.path), "symlink"
-                        elif entry.is_dir(follow_symlinks=False):
-                            stack.append(Path(entry.path))
-                            yield Path(entry.path), "dir"
-                        elif entry.is_file(follow_symlinks=False):
-                            yield Path(entry.path), "file"
-                        else:
-                            yield Path(entry.path), "other"
-                    except OSError as exc:
-                        raise SafetyError(f"cannot inspect entry: {entry.path}") from exc
-        except OSError as exc:
-            raise SafetyError(f"cannot read directory: {root_path}") from exc
+
+    def _raise(error: OSError) -> None:
+        raise SafetyError(f"cannot read directory: {root_path}") from error
+
+    for directory, dirnames, filenames in os.walk(root_path, onerror=_raise):
+        entries = [*dirnames, *filenames]
+        seen += len(entries)
+        if seen > max_entries:
+            raise SafetyError(f"more than {max_entries} entries under {root_path}")
+        for name in entries:
+            yield Path(directory) / name
+
+
+def _is_regular_file(path: Path) -> bool:
+    try:
+        return stat.S_ISREG(path.stat(follow_symlinks=False).st_mode)
+    except OSError as exc:
+        raise SafetyError(f"cannot inspect entry: {path}") from exc
 
 
 def _root_path(root: Path) -> Path:
