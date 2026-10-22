@@ -10,7 +10,6 @@ from aurscan.errors import (
     FetchError,
     FileTooLargeError,
     InvalidPackageNameError,
-    ParseError,
     SafetyError,
     UnsafePathError,
 )
@@ -29,7 +28,6 @@ def test_exit_code_values() -> None:
         InvalidPackageNameError,
         FetchError,
         CloneError,
-        ParseError,
         SafetyError,
         UnsafePathError,
         BinaryFileError,

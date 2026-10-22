@@ -180,6 +180,25 @@ def test_parse_package_with_history_uses_a_single_clone(
     assert [commit.message for commit in commits] == ["second", "initial"]
 
 
+def test_parse_package_with_history_forwards_timeout_to_clone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+    real_clone = clone_package
+
+    def recording(*args: object, **kwargs: object) -> Path:
+        captured.update(kwargs)
+        return real_clone(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(pipeline, "clone_package", recording)
+    repo = _make_repo(tmp_path / "source", {"PKGBUILD": PKGBUILD})
+
+    parse_package_with_history("demo", timeout=7.5, _git_url=repo.as_uri())
+
+    assert captured["timeout"] == 7.5
+    assert captured["depth"] == 11
+
+
 def test_parse_package_with_history_clone_failure_is_metadata_only(
     tmp_path: Path, clone_depths: list[int]
 ) -> None:

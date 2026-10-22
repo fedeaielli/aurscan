@@ -9,20 +9,19 @@ from __future__ import annotations
 
 import re
 import subprocess
-import tempfile
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
 from pydantic import AwareDatetime, Field
 
-from aurscan.clone import clone_package, git_env
-from aurscan.errors import AurscanError, HistoryError
+from aurscan.clone import git_env
+from aurscan.errors import HistoryError
 from aurscan.models import AurscanModel, Finding, PackageInfo, Severity
 from aurscan.parse import parse_install_script, parse_pkgbuild
 from aurscan.rules import RuleContext, RuleRegistry, dedupe_findings, sort_findings
 from aurscan.rules.common import METADATA_FILE, finding
-from aurscan.validation import sanitize_text, validate_package_name
+from aurscan.validation import sanitize_text
 
 PKGBUILD_FILENAME = "PKGBUILD"
 INSTALL_SUFFIX = ".install"
@@ -56,39 +55,6 @@ class Commit(AurscanModel):
     def short_hash(self) -> str:
         """Return the abbreviated hash used in finding messages."""
         return self.hash[:SHORT_HASH_LENGTH]
-
-
-def clone_history(
-    name: str,
-    *,
-    n: int = HISTORY_COMMITS,
-    timeout: float = GIT_TIMEOUT_SECONDS,
-    _git_url: str | None = None,
-) -> list[Commit]:
-    """Clone ``name`` and return its newest ``n`` commits, newest first.
-
-    The clone fetches ``n + 1`` commits so the oldest returned commit still has
-    a parent to diff against. ``timeout`` applies to the clone; ``_git_url``
-    exists only for tests. Scans use the single clone owned by ``pipeline`` and
-    call ``read_commits`` directly; this helper remains for standalone use.
-    """
-    validate_package_name(name)
-    if n < 1:
-        return []
-
-    with tempfile.TemporaryDirectory(prefix="aurscan-history-") as temporary:
-        clone_dir = Path(temporary) / name
-        try:
-            clone_package(
-                name,
-                clone_dir,
-                timeout=timeout,
-                url=_git_url,
-                depth=n + 1,
-            )
-        except AurscanError as exc:
-            raise HistoryError(f"could not clone history for {name}: {exc.message}") from exc
-        return read_commits(clone_dir, n=n, label=name)
 
 
 def read_commits(

@@ -169,14 +169,15 @@ def test_parse_install_script() -> None:
     assert script.filename == "basic.install"
     assert script.raw == source
     assert list(script.functions) == ["pre_install", "post_install", "pre_upgrade"]
-    assert [command.name for command in script.commands] == [
+    commands = [command for group in script.functions.values() for command in group]
+    assert [command.name for command in commands] == [
         "echo",
         "systemctl",
         "echo",
         "systemctl",
         "true",
     ]
-    systemctl = _command(script.commands, "systemctl enable demo.service")
+    systemctl = _command(commands, "systemctl enable demo.service")
     assert systemctl.line == 6
     assert systemctl.in_pipe_to is None
 
@@ -208,7 +209,8 @@ def test_parse_install_syntax_error_uses_fallback() -> None:
 
     assert result.parse_failed is True
     assert result.findings[0].file == "syntax_error.install"
-    assert result.install_scripts[0].commands == []
+    script = result.install_scripts[0]
+    assert [command for group in script.functions.values() for command in group] == []
 
 
 def test_parse_benign_fixture_has_no_findings() -> None:

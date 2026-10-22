@@ -47,7 +47,6 @@ class _Analysis:
 
     variables: dict[str, str | list[str]] = field(default_factory=dict)
     functions: dict[str, list[Command]] = field(default_factory=dict)
-    commands: list[Command] = field(default_factory=list)
 
 
 def parse_pkgbuild(source: str) -> ParseResult:
@@ -73,7 +72,6 @@ def parse_install_script(source: str, filename: str) -> ParseResult:
     script = InstallScript(
         filename=filename,
         functions=analysis.functions,
-        commands=analysis.commands,
         raw=source,
     )
     return ParseResult(
@@ -121,10 +119,8 @@ def _walk_tree(root: Node) -> _Analysis:
 
         if kind in _COMMAND_NODES:
             command = _make_command(node, pipe_targets.get(node.id))
-            if command is not None:
-                analysis.commands.append(command)
-                if function is not None:
-                    analysis.functions.setdefault(function, []).append(command)
+            if command is not None and function is not None:
+                analysis.functions.setdefault(function, []).append(command)
 
         child_top_level = top_level and kind == "program"
         for child in reversed(node.named_children):
@@ -304,9 +300,6 @@ def _fallback_analysis(source: str) -> _Analysis:
         name = match.group(1)
         analysis.variables[name] = _fallback_value(match.group(2).strip())
     analysis.functions = _fallback_functions(source)
-    analysis.commands = [
-        command for commands in analysis.functions.values() for command in commands
-    ]
     return analysis
 
 

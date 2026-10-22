@@ -92,7 +92,6 @@ class Pkgbuild(AurscanModel):
 class InstallScript(AurscanModel):
     filename: str
     functions: dict[str, list[Command]]
-    commands: list[Command]
     raw: str
 
 

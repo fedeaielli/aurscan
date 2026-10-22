@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import subprocess
+import tempfile
 from pathlib import Path
 
-import pytest
-
-import aurscan.history as history
 from aurscan.clone import clone_package
-from aurscan.errors import CloneError, HistoryError
 from aurscan.history import (
+    HISTORY_COMMITS,
     Commit,
-    clone_history,
     diff_findings,
     maintainer_change_findings,
     read_commits,
@@ -90,7 +87,15 @@ def _write(repo: Path, name: str, content: str) -> None:
     target.write_text(content, encoding="utf-8")
 
 
-def test_clone_history_returns_recent_commits_newest_first(tmp_path: Path) -> None:
+def _read_history(repo: Path, *, n: int = HISTORY_COMMITS) -> list[Commit]:
+    """Clone ``repo`` into a temporary directory and return its newest ``n`` commits."""
+    with tempfile.TemporaryDirectory() as temporary:
+        clone = Path(temporary) / "demo"
+        clone_package("demo", clone, url=repo.as_uri(), depth=n + 1)
+        return read_commits(clone, n=n, label="demo")
+
+
+def test_read_commits_returns_recent_commits_newest_first(tmp_path: Path) -> None:
     repo = tmp_path / "source"
     _init_repo(repo)
     _write(repo, "PKGBUILD", BENIGN_PKGBUILD)
@@ -100,7 +105,7 @@ def test_clone_history_returns_recent_commits_newest_first(tmp_path: Path) -> No
         _write(repo, "notes.txt", f"change {index}\n")
         _commit(repo, f"change {index}", "Alice")
 
-    commits = clone_history("demo", n=3, _git_url=repo.as_uri())
+    commits = _read_history(repo, n=3)
 
     assert [commit.message for commit in commits] == ["change 4", "change 3", "change 2"]
     assert commits[0].date.tzinfo is not None
@@ -119,7 +124,7 @@ def test_diff_findings_flags_curl_pipe_added_in_second_commit(tmp_path: Path) ->
     _write(repo, "PKGBUILD", PIPE_PKGBUILD)
     _commit(repo, "add update step", "Bob")
 
-    commits = clone_history("demo", _git_url=repo.as_uri())
+    commits = _read_history(repo)
     findings = diff_findings(commits, registry)
 
     assert len(commits) == 2
@@ -144,7 +149,7 @@ def test_diff_findings_ignores_preexisting_suspicious_lines(tmp_path: Path) -> N
     _write(repo, "PKGBUILD", PIPE_PKGBUILD.replace("pkgver=1.0", "pkgver=1.1"))
     _commit(repo, "bump version", "Bob")
 
-    findings = diff_findings(clone_history("demo", _git_url=repo.as_uri()), registry)
+    findings = diff_findings(_read_history(repo), registry)
 
     assert not by_rule(findings, "R01")
 
@@ -158,7 +163,7 @@ def test_diff_findings_flags_install_hook_changes(tmp_path: Path) -> None:
     _write(repo, "demo.install", PIPE_INSTALL)
     _commit(repo, "update hook", "Bob")
 
-    findings = diff_findings(clone_history("demo", _git_url=repo.as_uri()), registry)
+    findings = diff_findings(_read_history(repo), registry)
 
     r11 = by_rule(findings, "R11")
     assert len(r11) == 1
@@ -175,7 +180,7 @@ def test_maintainer_change_after_orphan_fires_m01(tmp_path: Path) -> None:
     _write(repo, "PKGBUILD", PIPE_PKGBUILD)
     _commit(repo, "update", "Bob")
 
-    commits = clone_history("demo", _git_url=repo.as_uri())
+    commits = _read_history(repo)
     findings = maintainer_change_findings(commits, make_meta(maintainer=None))
 
     assert len(findings) == 1
@@ -192,42 +197,11 @@ def test_maintainer_change_requires_orphan_and_author_change(tmp_path: Path) -> 
     _write(repo, "PKGBUILD", PIPE_PKGBUILD)
     _commit(repo, "update", "Bob")
 
-    commits = clone_history("demo", _git_url=repo.as_uri())
+    commits = _read_history(repo)
 
     assert maintainer_change_findings(commits, make_meta(maintainer="Bob")) == []
     commits[0] = Commit(**{**commits[0].model_dump(), "author": "Alice"})
     assert maintainer_change_findings(commits, make_meta(maintainer=None)) == []
-
-
-def test_clone_history_failure_raises_history_error(tmp_path: Path) -> None:
-    with pytest.raises(HistoryError, match="could not clone history"):
-        clone_history("demo", _git_url=(tmp_path / "missing").as_uri())
-
-
-def test_clone_history_forwards_timeout_to_clone(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_clone(
-        _name: str,
-        _dest: object,
-        *,
-        timeout: float = 0.0,
-        url: str | None = None,
-        depth: int = 1,
-    ) -> None:
-        captured["timeout"] = timeout
-        captured["url"] = url
-        captured["depth"] = depth
-        raise CloneError("stop")
-
-    monkeypatch.setattr(history, "clone_package", fake_clone)
-
-    with pytest.raises(HistoryError, match="could not clone history"):
-        clone_history("demo", timeout=7.5)
-
-    assert captured == {"timeout": 7.5, "url": None, "depth": 11}
 
 
 def test_read_commits_reads_an_existing_clone(tmp_path: Path) -> None:
