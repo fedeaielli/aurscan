@@ -8,12 +8,14 @@ from pathlib import Path
 import pytest
 
 import aurscan.history as history
+from aurscan.clone import clone_package
 from aurscan.errors import CloneError, HistoryError
 from aurscan.history import (
     Commit,
     clone_history,
     diff_findings,
     maintainer_change_findings,
+    read_commits,
 )
 from aurscan.models import Severity
 from aurscan.rules import registry
@@ -226,3 +228,22 @@ def test_clone_history_forwards_timeout_to_clone(
         clone_history("demo", timeout=7.5)
 
     assert captured == {"timeout": 7.5, "url": None, "depth": 11}
+
+
+def test_read_commits_reads_an_existing_clone(tmp_path: Path) -> None:
+    repo = tmp_path / "source"
+    _init_repo(repo)
+    _write(repo, "PKGBUILD", BENIGN_PKGBUILD)
+    _commit(repo, "initial", "Alice")
+    _write(repo, "PKGBUILD", PIPE_PKGBUILD)
+    _commit(repo, "second", "Bob")
+    _write(repo, "PKGBUILD", PIPE_PKGBUILD + "# third\n")
+    _commit(repo, "third", "Carol")
+
+    clone = tmp_path / "clone"
+    clone_package("demo", clone, url=repo.as_uri(), depth=3)
+
+    commits = read_commits(clone, n=2, label="demo")
+
+    assert [commit.message for commit in commits] == ["third", "second"]
+    assert commits[0].hash != commits[1].hash

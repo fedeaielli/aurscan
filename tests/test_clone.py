@@ -15,7 +15,7 @@ import pytest
 
 import aurscan.clone as clone
 from aurscan.clone import clone_package
-from aurscan.errors import CloneError
+from aurscan.errors import CloneError, CloneResourceError
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -90,8 +90,23 @@ def test_clone_enforces_size_limit(tmp_path: Path) -> None:
     _commit(repo, "big file")
     dest = tmp_path / "clone"
 
-    with pytest.raises(CloneError, match="exceeds"):
+    with pytest.raises(CloneResourceError, match="exceeds"):
         clone_package("demo", dest, url=repo.as_uri(), max_bytes=1024)
+    assert not dest.exists()
+
+
+def test_clone_timeout_is_a_resource_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dest = tmp_path / "clone"
+
+    def fake_run(*_args: object, **_kwargs: object) -> None:
+        raise subprocess.TimeoutExpired(cmd="git", timeout=1.0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(CloneResourceError, match="timed out"):
+        clone_package("demo", dest)
     assert not dest.exists()
 
 

@@ -29,6 +29,7 @@ INSTALL_SUFFIX = ".install"
 SHORT_HASH_LENGTH = 7
 MAX_CONTENT_BYTES = 1024 * 1024
 GIT_TIMEOUT_SECONDS = 60.0
+HISTORY_COMMITS = 10
 
 _HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 
@@ -60,7 +61,7 @@ class Commit(AurscanModel):
 def clone_history(
     name: str,
     *,
-    n: int = 10,
+    n: int = HISTORY_COMMITS,
     timeout: float = GIT_TIMEOUT_SECONDS,
     _git_url: str | None = None,
 ) -> list[Commit]:
@@ -68,7 +69,8 @@ def clone_history(
 
     The clone fetches ``n + 1`` commits so the oldest returned commit still has
     a parent to diff against. ``timeout`` applies to the clone; ``_git_url``
-    exists only for tests.
+    exists only for tests. Scans use the single clone owned by ``pipeline`` and
+    call ``read_commits`` directly; this helper remains for standalone use.
     """
     validate_package_name(name)
     if n < 1:
@@ -86,25 +88,44 @@ def clone_history(
             )
         except AurscanError as exc:
             raise HistoryError(f"could not clone history for {name}: {exc.message}") from exc
+        return read_commits(clone_dir, n=n, label=name)
 
-        records = _log_records(clone_dir, n + 1)
-        if not records:
-            raise HistoryError(f"no commits found for {name}")
 
-        commits: list[Commit] = []
-        for index, (hash_value, author, date, message) in enumerate(records[:n]):
-            parent = records[index + 1][0] if index + 1 < len(records) else None
-            commits.append(
-                _build_commit(
-                    clone_dir,
-                    hash_value=hash_value,
-                    parent=parent,
-                    author=author,
-                    date=date,
-                    message=message,
-                )
+def read_commits(
+    repo: Path,
+    *,
+    n: int = HISTORY_COMMITS,
+    label: str | None = None,
+) -> list[Commit]:
+    """Return the newest ``n`` commits of an existing clone, newest first.
+
+    ``repo`` must already contain the history to read: the caller fetches
+    ``n + 1`` commits so the oldest of the ``n`` results still has a parent to
+    diff against. ``label`` only improves the "no commits found" message, which
+    would otherwise show the temporary clone path.
+    """
+    if n < 1:
+        return []
+    records = _log_records(repo, n + 1)
+    if not records:
+        if label is None:
+            raise HistoryError("no commits found")
+        raise HistoryError(f"no commits found for {label}")
+
+    commits: list[Commit] = []
+    for index, (hash_value, author, date, message) in enumerate(records[:n]):
+        parent = records[index + 1][0] if index + 1 < len(records) else None
+        commits.append(
+            _build_commit(
+                repo,
+                hash_value=hash_value,
+                parent=parent,
+                author=author,
+                date=date,
+                message=message,
             )
-        return commits
+        )
+    return commits
 
 
 def diff_findings(commits: Sequence[Commit], rules: RuleRegistry) -> list[Finding]:

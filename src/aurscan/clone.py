@@ -10,7 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from aurscan.errors import CloneError
+from aurscan.errors import CloneError, CloneResourceError
 from aurscan.validation import validate_package_name
 
 DEFAULT_TIMEOUT_SECONDS = 60.0
@@ -84,7 +84,9 @@ def clone_package(
         raise CloneError("git executable not found") from exc
     except subprocess.TimeoutExpired as exc:
         _remove_clone(dest)
-        raise CloneError(f"git clone timed out after {timeout:g} seconds") from exc
+        raise CloneResourceError(
+            f"git clone timed out after {timeout:g} seconds"
+        ) from exc
 
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip()
@@ -94,7 +96,7 @@ def clone_package(
     size = _directory_size(dest, max_bytes=max_bytes)
     if size > max_bytes:
         _remove_clone(dest)
-        raise CloneError(f"cloned repository exceeds {max_bytes} bytes")
+        raise CloneResourceError(f"cloned repository exceeds {max_bytes} bytes")
 
     return dest
 

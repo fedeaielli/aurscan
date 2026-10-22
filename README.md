@@ -158,7 +158,7 @@ Findings
 | Option | Meaning |
 | --- | --- |
 | `--json` | Print a machine-readable report instead of the human report. |
-| `--timeout SECONDS` | Timeout for AUR requests and the package clone. |
+| `--timeout SECONDS` | Timeout for AUR requests and each clone attempt. |
 | `--deps` | Also scan AUR dependencies. |
 | `--depth N` | Dependency depth to scan, from `1` to `5`. |
 | `--include-make` | Include `makedepends` when scanning dependencies. |
@@ -227,6 +227,10 @@ Run `aurscan --explain RULE_ID` for the full description of any rule.
 - Variables are not expanded for reporting; findings show the raw source slice.
 - If the repository cannot be cloned, the report falls back to metadata-only
   analysis and says so. Content rules and history checks are then unavailable.
+- With history enabled the clone includes the last 10 commits, so it can be
+  larger than a content-only clone. If it exceeds the size limit or times out,
+  aurscan retries once at depth 1 without history and says so in the analysis
+  notes.
 - Architecture-specific variables such as `source_x86_64` and
   `sha256sums_x86_64` are tracked explicitly, but arbitrary computed variable
   names are not resolved.

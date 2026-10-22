@@ -35,6 +35,12 @@ class CloneError(AurscanError):
     """The package git repository could not be cloned safely."""
 
 
+class CloneResourceError(CloneError):
+    """A clone failed because fetching the requested history exceeded the size
+    limit or timed out.
+    """
+
+
 class ParseError(AurscanError):
     """A PKGBUILD or install script could not be parsed."""
 

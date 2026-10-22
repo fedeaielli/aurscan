@@ -13,7 +13,6 @@ import pytest
 import respx
 
 import aurscan.cli as cli
-from aurscan.errors import HistoryError
 from aurscan.fetch import RPC_URL
 from aurscan.history import Commit
 from aurscan.models import ParseResult, Report
@@ -61,16 +60,22 @@ def _parse_result(
 
 
 @pytest.fixture
-def set_parse(monkeypatch: pytest.MonkeyPatch) -> Callable[[ParseResult], None]:
-    """Replace the clone/parse step with a prepared result."""
+def set_parse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Callable[[ParseResult, list[Commit] | None], None]:
+    """Replace the single clone/parse step with a prepared result and commits."""
 
-    def _set(result: ParseResult) -> None:
-        def fake(name: str, *, timeout: float = 30.0) -> ParseResult:
-            return result
+    def _set(result: ParseResult, commits: list[Commit] | None = None) -> None:
+        def fake(
+            name: str,
+            *,
+            timeout: float = 30.0,
+            include_history: bool = True,
+            **_kwargs: object,
+        ) -> tuple[ParseResult, list[Commit]]:
+            return result, list(commits or [])
 
-        monkeypatch.setattr(cli, "parse_package", fake)
-        # Keep the history clone off by default; individual tests override it.
-        monkeypatch.setattr(cli, "clone_history", lambda _name, **_kwargs: [])
+        monkeypatch.setattr(cli, "parse_package_with_history", fake)
 
     return _set
 
@@ -319,35 +324,35 @@ def test_cache_reuses_a_response(
 
 
 @respx.mock
-def test_timeout_is_forwarded_to_parse_and_history(
+def test_timeout_is_forwarded_to_the_scan_pipeline(
     rpc_route: respx.Route,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: dict[str, float] = {}
+    captured: dict[str, object] = {}
 
-    def fake_parse(_name: str, *, timeout: float) -> ParseResult:
-        captured["parse"] = timeout
-        return _parse_result(BENIGN)
+    def fake_scan(
+        _name: str,
+        *,
+        timeout: float,
+        include_history: bool,
+        **_kwargs: object,
+    ) -> tuple[ParseResult, list[Commit]]:
+        captured["timeout"] = timeout
+        captured["include_history"] = include_history
+        return _parse_result(BENIGN), []
 
-    def fake_history(_name: str, *, timeout: float) -> list[Commit]:
-        captured["history"] = timeout
-        return []
-
-    monkeypatch.setattr(cli, "parse_package", fake_parse)
-    monkeypatch.setattr(cli, "clone_history", fake_history)
+    monkeypatch.setattr(cli, "parse_package_with_history", fake_scan)
 
     assert cli.main(["demo", "--timeout", "42"]) == 0
-    assert captured == {"parse": 42.0, "history": 42.0}
+    assert captured == {"timeout": 42.0, "include_history": True}
 
 
 @respx.mock
 def test_history_findings_are_reported(
     rpc_route: respx.Route,
-    set_parse: Callable[[ParseResult], None],
-    monkeypatch: pytest.MonkeyPatch,
+    set_parse: Callable[[ParseResult, list[Commit] | None], None],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    set_parse(_parse_result(BENIGN))
     commit = Commit(
         hash="a" * 40,
         author="Bob",
@@ -358,7 +363,7 @@ def test_history_findings_are_reported(
         content={"PKGBUILD": REVIEW_PKGBUILD},
         tree_files=["PKGBUILD"],
     )
-    monkeypatch.setattr(cli, "clone_history", lambda _name, **_kwargs: [commit])
+    set_parse(_parse_result(BENIGN), [commit])
 
     assert cli.main(["demo"]) == 1
     out = capsys.readouterr().out
@@ -369,11 +374,9 @@ def test_history_findings_are_reported(
 @respx.mock
 def test_working_tree_finding_keeps_history_context(
     rpc_route: respx.Route,
-    set_parse: Callable[[ParseResult], None],
-    monkeypatch: pytest.MonkeyPatch,
+    set_parse: Callable[[ParseResult, list[Commit] | None], None],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    set_parse(_parse_result(REVIEW_PKGBUILD))
     commit = Commit(
         hash="a" * 40,
         author="Bob",
@@ -384,7 +387,7 @@ def test_working_tree_finding_keeps_history_context(
         content={"PKGBUILD": REVIEW_PKGBUILD},
         tree_files=["PKGBUILD"],
     )
-    monkeypatch.setattr(cli, "clone_history", lambda _name, **_kwargs: [commit])
+    set_parse(_parse_result(REVIEW_PKGBUILD), [commit])
 
     assert cli.main(["demo"]) == 1
     out = capsys.readouterr().out
@@ -395,32 +398,37 @@ def test_working_tree_finding_keeps_history_context(
 @respx.mock
 def test_no_history_skips_the_history_clone(
     rpc_route: respx.Route,
-    set_parse: Callable[[ParseResult], None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    set_parse(_parse_result(BENIGN))
+    captured: dict[str, object] = {}
 
-    def _unexpected(_name: str, **_kwargs: object) -> list[Commit]:
-        raise AssertionError("history must not run with --no-history")
+    def fake_scan(
+        _name: str,
+        *,
+        include_history: bool,
+        **_kwargs: object,
+    ) -> tuple[ParseResult, list[Commit]]:
+        captured["include_history"] = include_history
+        return _parse_result(BENIGN), []
 
-    monkeypatch.setattr(cli, "clone_history", _unexpected)
+    monkeypatch.setattr(cli, "parse_package_with_history", fake_scan)
 
     assert cli.main(["demo", "--no-history"]) == 0
+    assert captured == {"include_history": False}
 
 
 @respx.mock
 def test_history_failure_is_an_analysis_note(
     rpc_route: respx.Route,
-    set_parse: Callable[[ParseResult], None],
-    monkeypatch: pytest.MonkeyPatch,
+    set_parse: Callable[[ParseResult, list[Commit] | None], None],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    set_parse(_parse_result(BENIGN))
-
-    def _fail(_name: str, **_kwargs: object) -> list[Commit]:
-        raise HistoryError("git log failed")
-
-    monkeypatch.setattr(cli, "clone_history", _fail)
+    set_parse(
+        _parse_result(
+            BENIGN,
+            errors=["history analysis failed: git log failed"],
+        )
+    )
 
     assert cli.main(["demo"]) == 0
     out = capsys.readouterr().out

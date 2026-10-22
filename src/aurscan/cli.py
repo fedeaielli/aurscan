@@ -19,13 +19,9 @@ from aurscan.deps import (
 )
 from aurscan.errors import AurscanError, ExitCode
 from aurscan.fetch import fetch_meta
-from aurscan.history import (
-    clone_history,
-    diff_findings,
-    maintainer_change_findings,
-)
+from aurscan.history import diff_findings, maintainer_change_findings
 from aurscan.models import Verdict
-from aurscan.pipeline import parse_package
+from aurscan.pipeline import parse_package_with_history
 from aurscan.report import build_report, highest_verdict, render_human, render_json
 from aurscan.rules import RuleContext, registry
 from aurscan.validation import sanitize_text, validate_package_name
@@ -108,7 +104,9 @@ def scan(
         name = validate_package_name(package)
         cache = None if no_cache else ResponseCache(default_cache_dir())
         info = fetch_meta(name, timeout=timeout, cache=cache)
-        parse_result = parse_package(name, timeout=timeout)
+        parse_result, commits = parse_package_with_history(
+            name, timeout=timeout, include_history=not no_history
+        )
         context = RuleContext(
             pkgbuild=parse_result.pkgbuild,
             install_scripts=tuple(parse_result.install_scripts),
@@ -116,14 +114,9 @@ def scan(
             cloned_files=tuple(parse_result.cloned_files),
         )
         findings = registry.run_all(context)
-        if not no_history:
-            try:
-                commits = clone_history(name, timeout=timeout)
-                findings.extend(diff_findings(commits, registry))
-                findings.extend(maintainer_change_findings(commits, info))
-            except AurscanError as exc:
-                # History is an enhancement: a git failure must not abort the scan.
-                parse_result.errors.append(f"history analysis failed: {exc.message}")
+        if commits:
+            findings.extend(diff_findings(commits, registry))
+            findings.extend(maintainer_change_findings(commits, info))
         report = build_report(info, parse_result, findings)
         if deps:
             report.dependencies = scan_dependencies(
