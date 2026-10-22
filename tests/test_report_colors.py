@@ -6,6 +6,7 @@ from rich.console import Console
 
 from aurscan.models import Finding, Report, Severity, Verdict
 from aurscan.report import render_human
+from aurscan.scoring import load_scoring_config
 from tests.rules_utils import make_meta
 
 EXPECTED_SEVERITY_COLORS: dict[Severity, str] = {
@@ -54,7 +55,7 @@ def test_severity_colors_snapshot() -> None:
         width=200,
     )
 
-    render_human(_colored_report(), console)
+    render_human(_colored_report(), console, config=load_scoring_config())
     output = console.export_text(styles=True)
 
     for severity, color in EXPECTED_SEVERITY_COLORS.items():
@@ -70,7 +71,7 @@ def test_score_bar_snapshot() -> None:
         width=200,
     )
 
-    render_human(_colored_report(), console)
+    render_human(_colored_report(), console, config=load_scoring_config())
     output = console.export_text()
 
     expected_bar = "\u2588" * 8 + "\u2591" * 12

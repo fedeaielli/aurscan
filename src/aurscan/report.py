@@ -13,7 +13,7 @@ from rich.text import Text
 
 from aurscan.models import Finding, PackageInfo, ParseResult, Report, Severity, Verdict
 from aurscan.rules import dedupe_findings, sort_findings
-from aurscan.scoring import ScoringConfig, load_scoring_config, score
+from aurscan.scoring import ScoringConfig, score
 from aurscan.validation import sanitize_text
 
 _SEVERITY_STYLES: dict[Severity, str] = {
@@ -92,10 +92,15 @@ def iter_reports(report: Report) -> Iterator[Report]:
         queue.extend(current.dependencies)
 
 
-def render_human(report: Report, console: Console) -> None:
+def render_human(
+    report: Report,
+    console: Console,
+    *,
+    config: ScoringConfig,
+) -> None:
     """Print the human-readable report."""
     _render_header(report.package, console)
-    _render_risk(report, console)
+    _render_risk(report, console, config)
     _render_metadata(report.package, console)
 
     if report.findings:
@@ -128,9 +133,11 @@ def _render_header(info: PackageInfo, console: Console) -> None:
     console.print(header)
 
 
-def _render_risk(report: Report, console: Console) -> None:
+def _render_risk(
+    report: Report, console: Console, config: ScoringConfig
+) -> None:
     style = _VERDICT_STYLES[report.verdict]
-    maximum = load_scoring_config().max_score
+    maximum = config.max_score
     line = Text("Risk: ", style="bold")
     line.append(report.verdict.value.upper(), style=style)
     line.append(f" ({report.score}/{maximum}) ")

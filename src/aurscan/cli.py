@@ -24,6 +24,7 @@ from aurscan.models import Verdict
 from aurscan.pipeline import parse_package_with_history
 from aurscan.report import build_report, highest_verdict, render_human, render_json
 from aurscan.rules import RuleContext, registry
+from aurscan.scoring import load_scoring_config
 from aurscan.validation import sanitize_text, validate_package_name
 
 app = typer.Typer(
@@ -117,7 +118,8 @@ def scan(
         if commits:
             findings.extend(diff_findings(commits, registry))
             findings.extend(maintainer_change_findings(commits, info))
-        report = build_report(info, parse_result, findings)
+        config = load_scoring_config()
+        report = build_report(info, parse_result, findings, config=config)
         if deps:
             report.dependencies = scan_dependencies(
                 report,
@@ -130,7 +132,7 @@ def scan(
         if json_output:
             typer.echo(render_json(report))
         else:
-            render_human(report, Console())
+            render_human(report, Console(), config=config)
         raise _CommandExit(int(_VERDICT_EXIT_CODES[highest_verdict(report)]))
     except AurscanError as exc:
         message = sanitize_text(str(exc), max_length=500) or exc.__class__.__name__

@@ -7,7 +7,7 @@ import json
 import pytest
 from rich.console import Console
 
-from aurscan.models import Report, Verdict
+from aurscan.models import Report, Severity, Verdict
 from aurscan.parse import parse_pkgbuild
 from aurscan.report import (
     build_report,
@@ -17,6 +17,7 @@ from aurscan.report import (
     score_bar,
 )
 from aurscan.rules import RuleContext, registry
+from aurscan.scoring import ScoringConfig, ScoringThresholds, load_scoring_config
 from tests.rules_utils import make_meta
 
 STRONG = "b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184"
@@ -111,13 +112,27 @@ def test_risk_line_includes_score_bar() -> None:
     report = _empty_report("root", verdict=Verdict.RISKY, score=72)
     console = Console(record=True, width=120)
 
-    render_human(report, console)
+    render_human(report, console, config=load_scoring_config())
 
     assert (
         "Risk: RISKY (72/100) \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588"
         "\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2591"
         in console.export_text()
     )
+
+
+def test_render_human_uses_injected_scoring_config() -> None:
+    report = _empty_report("root", verdict=Verdict.REVIEW, score=5)
+    custom = ScoringConfig(
+        max_score=10,
+        weights={severity: 0 for severity in Severity},
+        thresholds=ScoringThresholds(review=1, risky=2),
+    )
+    console = Console(record=True, width=120)
+
+    render_human(report, console, config=custom)
+
+    assert "Risk: REVIEW (5/10)" in console.export_text()
 
 
 def test_highest_verdict_includes_nested_dependencies() -> None:
@@ -160,7 +175,7 @@ def test_human_dependency_table_reports_highest_risk_and_notes() -> None:
     root.dependencies.append(dependency)
     console = Console(record=True, width=120)
 
-    render_human(root, console)
+    render_human(root, console, config=load_scoring_config())
     output = console.export_text()
 
     assert "Dependencies" in output
