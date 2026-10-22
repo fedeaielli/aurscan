@@ -367,6 +367,32 @@ def test_history_findings_are_reported(
 
 
 @respx.mock
+def test_working_tree_finding_keeps_history_context(
+    rpc_route: respx.Route,
+    set_parse: Callable[[ParseResult], None],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    set_parse(_parse_result(REVIEW_PKGBUILD))
+    commit = Commit(
+        hash="a" * 40,
+        author="Bob",
+        date=datetime(2026, 1, 1, tzinfo=UTC),
+        message="add pipe",
+        files=["PKGBUILD"],
+        added_lines={"PKGBUILD": [8]},
+        content={"PKGBUILD": REVIEW_PKGBUILD},
+        tree_files=["PKGBUILD"],
+    )
+    monkeypatch.setattr(cli, "clone_history", lambda _name, **_kwargs: [commit])
+
+    assert cli.main(["demo"]) == 1
+    out = capsys.readouterr().out
+    assert "new in commit aaaaaaa:" in out
+    assert out.count("R01") == 1
+
+
+@respx.mock
 def test_no_history_skips_the_history_clone(
     rpc_route: respx.Route,
     set_parse: Callable[[ParseResult], None],

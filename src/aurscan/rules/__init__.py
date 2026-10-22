@@ -127,16 +127,37 @@ class RuleRegistry:
 
 
 def dedupe_findings(findings: Sequence[Finding]) -> list[Finding]:
-    """Drop duplicate findings with the same ``(rule_id, file, line)`` key."""
-    seen: set[tuple[str, str, int | None]] = set()
-    unique: list[Finding] = []
+    """Merge findings that share the same ``(rule_id, file, line)`` key.
+
+    A git-history finding supersedes a static finding with the same key so the
+    "new in commit" context is not lost. When the messages differ, they are
+    combined into one finding instead of dropping the secondary message.
+    """
+    grouped: dict[tuple[str, str, int | None], list[Finding]] = {}
     for finding in findings:
         key = (finding.rule_id, finding.file, finding.line)
-        if key in seen:
+        grouped.setdefault(key, []).append(finding)
+    return [_merge_duplicates(group) for group in grouped.values()]
+
+
+def _merge_duplicates(group: Sequence[Finding]) -> Finding:
+    """Return one finding per key, preferring history and keeping every message."""
+    primary = next(
+        (finding for finding in group if finding.source == "history"), group[0]
+    )
+    messages = [primary.message]
+    for finding in group:
+        if finding is primary:
             continue
-        seen.add(key)
-        unique.append(finding)
-    return unique
+        if any(finding.message in message for message in messages):
+            continue
+        messages.append(finding.message)
+    if len(messages) == 1:
+        return primary
+    merged = primary.message + "".join(
+        f" (also: {extra})" for extra in messages[1:]
+    )
+    return primary.model_copy(update={"message": merged})
 
 
 def sort_findings(findings: Sequence[Finding]) -> list[Finding]:

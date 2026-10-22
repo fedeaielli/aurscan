@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 
 from aurscan.models import Finding, Severity
-from aurscan.rules import RuleContext, RuleRegistry, registry
+from aurscan.rules import (
+    RuleContext,
+    RuleRegistry,
+    dedupe_findings,
+    registry,
+)
 from aurscan.rules.common import finding
 from tests.rules_utils import parse_source
 
@@ -65,7 +70,40 @@ def test_findings_are_deduplicated_and_sorted() -> None:
 
     findings = rules.run_all(_context())
 
-    assert [item.message for item in findings] == ["first", "second"]
+    assert [item.message for item in findings] == ["first (also: duplicate)", "second"]
+
+
+def test_history_finding_supersedes_static_duplicate() -> None:
+    static = finding("R01", Severity.HIGH, "curl piped to a shell", "PKGBUILD", line=8)
+    history = static.model_copy(
+        update={
+            "message": "new in commit abc1234: curl piped to a shell",
+            "source": "history",
+        }
+    )
+
+    merged = dedupe_findings([static, history])
+
+    assert len(merged) == 1
+    assert merged[0].source == "history"
+    assert merged[0].message == "new in commit abc1234: curl piped to a shell"
+
+
+def test_differing_duplicate_messages_are_merged() -> None:
+    static = finding("R04", Severity.MEDIUM, "source host a.invalid differs", "PKGBUILD", line=5)
+    history = static.model_copy(
+        update={
+            "message": "new in commit abc1234: source host b.invalid differs",
+            "source": "history",
+        }
+    )
+
+    merged = dedupe_findings([static, history])
+
+    assert len(merged) == 1
+    assert merged[0].source == "history"
+    assert "source host a.invalid differs" in merged[0].message
+    assert "source host b.invalid differs" in merged[0].message
 
 
 def test_aggregate_rules_run_after_normal_rules() -> None:
