@@ -338,15 +338,6 @@ def source_groups(pkgbuild: Pkgbuild) -> tuple[SourceGroup, ...]:
     return tuple(groups)
 
 
-def aligned_strong_checksum(pkgbuild: Pkgbuild, index: int) -> str | None:
-    """Return a non-SKIP sha256/sha512 value aligned with a base source entry.
-
-    Alignment requires equal list lengths, so a source/checksum count mismatch
-    cannot be used to downgrade a finding.
-    """
-    return aligned_strong_checksum_in(source_groups(pkgbuild)[0], index)
-
-
 def aligned_strong_checksum_in(group: SourceGroup, index: int) -> str | None:
     """Return a non-SKIP strong checksum aligned with a source group entry."""
     if index >= len(group.sources):
@@ -359,16 +350,6 @@ def aligned_strong_checksum_in(group: SourceGroup, index: int) -> str | None:
         if value and value != "SKIP":
             return value
     return None
-
-
-def checksum_arrays(pkgbuild: Pkgbuild) -> tuple[tuple[str, list[str]], ...]:
-    """Return the base checksum arrays, with their variable names."""
-    return (
-        ("sha256sums", pkgbuild.sha256sums),
-        ("sha512sums", pkgbuild.sha512sums),
-        ("md5sums", pkgbuild.md5sums),
-        ("b2sums", pkgbuild.b2sums),
-    )
 
 
 def is_package_function(name: str) -> bool:

@@ -60,12 +60,6 @@ class Command(AurscanModel):
     line: int
 
 
-class Function(AurscanModel):
-    name: str
-    commands: list[Command]
-    raw: str
-
-
 class Pkgbuild(AurscanModel):
     pkgname: list[str]
     pkgver: str | None
