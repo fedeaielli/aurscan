@@ -12,10 +12,10 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
+from aurscan.constants import PKGBUILD_FILENAME
 from aurscan.models import Finding, Severity
 from aurscan.rules import RuleContext, register
 from aurscan.rules.common import (
-    PKGBUILD_FILE,
     count_printf_escapes,
     finding,
     has_hex_escape_run,
@@ -50,7 +50,7 @@ def r12_obfuscation(ctx: RuleContext) -> list[Finding]:
 
 def _sources(ctx: RuleContext) -> Iterator[tuple[str, str]]:
     if ctx.pkgbuild is not None:
-        yield PKGBUILD_FILE, ctx.pkgbuild.raw
+        yield PKGBUILD_FILENAME, ctx.pkgbuild.raw
     for script in ctx.install_scripts:
         yield script.filename, script.raw
 

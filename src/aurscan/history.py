@@ -15,6 +15,7 @@ from pathlib import Path
 from pydantic import Field
 
 from aurscan.clone import git_env
+from aurscan.constants import INSTALL_SUFFIX, PKGBUILD_FILENAME
 from aurscan.errors import HistoryError
 from aurscan.models import AurscanModel, Finding, PackageInfo, Severity
 from aurscan.parse import parse_install_script, parse_pkgbuild
@@ -22,8 +23,6 @@ from aurscan.rules import RuleContext, RuleRegistry, dedupe_findings, sort_findi
 from aurscan.rules.common import METADATA_FILE, finding
 from aurscan.validation import sanitize_text
 
-PKGBUILD_FILENAME = "PKGBUILD"
-INSTALL_SUFFIX = ".install"
 SHORT_HASH_LENGTH = 7
 MAX_CONTENT_BYTES = 1024 * 1024
 GIT_TIMEOUT_SECONDS = 60.0

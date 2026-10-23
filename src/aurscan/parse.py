@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from tree_sitter import Language, Node, Parser
 from tree_sitter_bash import language as bash_language
 
+from aurscan.constants import PKGBUILD_FILENAME
 from aurscan.models import (
     Command,
     Finding,
@@ -24,7 +25,6 @@ from aurscan.models import (
 )
 from aurscan.shell import basename, expand_variables, split_words
 
-PKGBUILD_FILENAME = "PKGBUILD"
 PARSE_FALLBACK_RULE_ID = "PARSE-001"
 
 _COMMAND_NODES = frozenset({"command", "declaration_command"})

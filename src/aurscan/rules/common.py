@@ -16,11 +16,11 @@ from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import urlsplit
 
+from aurscan.constants import PKGBUILD_FILENAME
 from aurscan.models import Command, Finding, InstallScript, Pkgbuild, Severity
 from aurscan.rules import RuleContext
 from aurscan.shell import basename
 
-PKGBUILD_FILE = "PKGBUILD"
 METADATA_FILE = "AUR"
 
 NETWORK_CMDS = frozenset(
@@ -143,7 +143,7 @@ def iter_install_commands(script: InstallScript) -> Iterator[tuple[str, Command]
 def iter_commands(ctx: RuleContext) -> Iterator[tuple[str, str, Command]]:
     """Yield ``(file, function, command)`` across the PKGBUILD and install scripts."""
     for function, command in iter_pkgbuild_commands(ctx.pkgbuild):
-        yield PKGBUILD_FILE, function, command
+        yield PKGBUILD_FILENAME, function, command
     for script in ctx.install_scripts:
         for function, command in iter_install_commands(script):
             yield script.filename, function, command
@@ -153,7 +153,7 @@ def function_groups(ctx: RuleContext) -> Iterator[tuple[str, str, list[Command]]
     """Yield ``(file, function, commands)`` groups for cross-command checks."""
     if ctx.pkgbuild is not None:
         for function, commands in ctx.pkgbuild.functions.items():
-            yield PKGBUILD_FILE, function, commands
+            yield PKGBUILD_FILENAME, function, commands
     for script in ctx.install_scripts:
         for function, commands in script.functions.items():
             yield script.filename, function, commands

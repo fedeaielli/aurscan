@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from aurscan.constants import INSTALL_SUFFIX
 from aurscan.models import Command, Finding, Severity
 from aurscan.rules import RuleContext, register
 from aurscan.rules.common import finding, iter_commands
@@ -32,7 +33,7 @@ def r08_persistence(ctx: RuleContext) -> list[Finding]:
         description, service = detected
         severity = (
             Severity.LOW
-            if service and file.endswith(".install")
+            if service and file.endswith(INSTALL_SUFFIX)
             else Severity.HIGH
         )
         findings.append(

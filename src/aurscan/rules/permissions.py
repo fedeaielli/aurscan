@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from aurscan.constants import PKGBUILD_FILENAME
 from aurscan.models import Command, Finding, Severity
 from aurscan.rules import RuleContext, register
 from aurscan.rules.common import (
@@ -77,7 +78,7 @@ def r10_write_outside_pkgdir(ctx: RuleContext) -> list[Finding]:
                     "R10",
                     Severity.MEDIUM,
                     f"writes outside $pkgdir: {destination}",
-                    "PKGBUILD",
+                    PKGBUILD_FILENAME,
                     line=command.line,
                     snippet=command.raw,
                 )
@@ -116,7 +117,7 @@ def r17_install_privilege_bits(ctx: RuleContext) -> list[Finding]:
                 "R17",
                 severity,
                 f"install -m {description} in {function}()",
-                "PKGBUILD",
+                PKGBUILD_FILENAME,
                 line=command.line,
                 snippet=command.raw,
             )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 
+from aurscan.constants import PKGBUILD_FILENAME
 from aurscan.models import Finding, Severity
 from aurscan.rules import RuleContext, register
 from aurscan.rules.common import finding, line_of
@@ -30,7 +31,7 @@ def r15_missing_install_script(ctx: RuleContext) -> list[Finding]:
             "R15",
             Severity.MEDIUM,
             f"install script declared but not found in the clone: {pkgbuild.install}",
-            "PKGBUILD",
+            PKGBUILD_FILENAME,
             line=line_of(pkgbuild.raw, "install="),
             snippet=pkgbuild.install,
         )
