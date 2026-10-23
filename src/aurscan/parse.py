@@ -1,7 +1,9 @@
 """Static parsing of PKGBUILDs and install scripts with tree-sitter-bash.
 
 The parser never executes package content. It walks the syntax tree iteratively
-(no Python recursion), keeps raw source slices, and never expands variables.
+(no Python recursion) and keeps raw source slices. Only ``source*``, checksum and
+``url`` values go through bounded ``$var``/``${var}`` substitution so that source
+rules see the real host; ``variables`` and ``raw`` stay verbatim.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from aurscan.models import (
     Pkgbuild,
     Severity,
 )
-from aurscan.shell import basename, split_words
+from aurscan.shell import basename, expand_variables, split_words
 
 PKGBUILD_FILENAME = "PKGBUILD"
 PARSE_FALLBACK_RULE_ID = "PARSE-001"
@@ -225,7 +227,7 @@ def _build_pkgbuild(analysis: _Analysis, source: str) -> Pkgbuild:
         pkgrel=_as_optional_str(variables.get("pkgrel")),
         epoch=_as_optional_str(variables.get("epoch")),
         pkgdesc=_as_optional_str(variables.get("pkgdesc")),
-        url=_as_optional_str(variables.get("url")),
+        url=_expanded_optional(variables.get("url"), variables),
         install=_as_optional_str(variables.get("install")),
         arch=_as_list(variables.get("arch")),
         license=_as_list(variables.get("license")),
@@ -236,11 +238,11 @@ def _build_pkgbuild(analysis: _Analysis, source: str) -> Pkgbuild:
         provides=_as_list(variables.get("provides")),
         conflicts=_as_list(variables.get("conflicts")),
         replaces=_as_list(variables.get("replaces")),
-        source=_as_list(variables.get("source")),
-        sha256sums=_as_list(variables.get("sha256sums")),
-        sha512sums=_as_list(variables.get("sha512sums")),
-        md5sums=_as_list(variables.get("md5sums")),
-        b2sums=_as_list(variables.get("b2sums")),
+        source=_expanded(variables.get("source"), variables),
+        sha256sums=_expanded(variables.get("sha256sums"), variables),
+        sha512sums=_expanded(variables.get("sha512sums"), variables),
+        md5sums=_expanded(variables.get("md5sums"), variables),
+        b2sums=_expanded(variables.get("b2sums"), variables),
         sources_by_arch=sources_by_arch,
         checksums_by_arch=checksums_by_arch,
         functions=analysis.functions,
@@ -261,9 +263,9 @@ def _arch_variables(
             continue
         kind, arch = match.groups()
         if kind == "source":
-            sources[arch] = _as_list(value)
+            sources[arch] = _expanded(value, variables)
         else:
-            checksums.setdefault(arch, {})[kind] = _as_list(value)
+            checksums.setdefault(arch, {})[kind] = _expanded(value, variables)
     return sources, checksums
 
 
@@ -279,6 +281,21 @@ def _as_optional_str(value: str | list[str] | None) -> str | None:
     if isinstance(value, list):
         return value[0] if value else None
     return value or None
+
+
+def _expanded(
+    value: str | list[str] | None, variables: dict[str, str | list[str]]
+) -> list[str]:
+    """Substitute ``$var``/``${var}`` in each entry; unresolved names stay intact."""
+    return [expand_variables(item, variables) for item in _as_list(value)]
+
+
+def _expanded_optional(
+    value: str | list[str] | None, variables: dict[str, str | list[str]]
+) -> str | None:
+    """Expand ``value`` as a scalar, keeping unknown names untouched."""
+    text = _as_optional_str(value)
+    return expand_variables(text, variables) if text else None
 
 
 def _fallback_finding(filename: str) -> Finding:

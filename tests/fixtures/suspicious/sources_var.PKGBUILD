@@ -1,0 +1,20 @@
+pkgname=sources-var-demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+url="https://example.invalid/sources-var-demo"
+_mirror="https://mirror.invalid"
+_plain="http://plain.invalid"
+_skip="SKIP"
+source=(
+  "$_mirror/sources-var-demo-$pkgver.tar.gz"
+  "$_plain/plain-$pkgver.tar.gz"
+  "sources-var-demo.patch"
+)
+sha256sums=(
+  'b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184'
+  'b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184'
+  "$_skip"
+)
+source_x86_64=("${_plain}/x86_64-$pkgver.tar.gz")
+sha256sums_x86_64=('b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184')

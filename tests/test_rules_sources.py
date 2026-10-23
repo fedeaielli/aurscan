@@ -49,6 +49,26 @@ sha256sums_x86_64=('{STRONG}')
     assert "mirror.invalid" in findings[0].message
 
 
+def test_r04_flags_source_built_from_variable_host() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+url="https://example.invalid/demo"
+_mirror="https://mirror.invalid"
+source=("$_mirror/demo-$pkgver.tar.gz")
+sha256sums=('{STRONG}')
+"""
+    findings = by_rule(run_rules(source), "R04")
+
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.MEDIUM
+    assert "mirror.invalid" in findings[0].message
+    # The finding carries the expanded URL that the rule inspected.
+    assert findings[0].snippet == "https://mirror.invalid/demo-1.0.tar.gz"
+
+
 def test_r04_skips_without_upstream_url_and_for_vcs_sources() -> None:
     source = f"""\
 pkgname=demo
@@ -139,6 +159,24 @@ sha256sums_x86_64=('{STRONG}')
     assert findings[0].severity == Severity.LOW
 
 
+def test_r05_flags_http_source_behind_variable() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+url="https://example.invalid/demo"
+_plain="http://example.invalid"
+source=("$_plain/demo-$pkgver.tar.gz")
+sha256sums=('{STRONG}')
+"""
+    findings = by_rule(run_rules(source), "R05")
+
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.LOW
+    assert "plain HTTP" in findings[0].message
+
+
 def test_r05_alignment_requires_matching_checksum_count() -> None:
     source = """\
 pkgname=demo
@@ -188,6 +226,23 @@ sha256sums_x86_64=('SKIP')
     assert findings[0].severity == Severity.LOW
     assert "SKIP" in findings[0].message
     assert findings[0].line == 6
+
+
+def test_r06_skip_from_checksum_variable() -> None:
+    source = """\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+_skip="SKIP"
+source=("a.tar.gz")
+sha256sums=("$_skip")
+"""
+    findings = by_rule(run_rules(source), "R06")
+
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.LOW
+    assert "SKIP" in findings[0].message
 
 
 def test_r06_reports_architecture_checksum_mismatch_name() -> None:

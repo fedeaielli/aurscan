@@ -1,7 +1,8 @@
 """Shared rule helpers and constants.
 
 Nothing here executes package content. All helpers inspect parsed commands and
-raw source slices only; variables are never expanded.
+raw source slices only. Source, checksum and ``url`` values arrive already
+expanded by :mod:`aurscan.parse`; every other field stays verbatim.
 """
 
 from __future__ import annotations

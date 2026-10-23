@@ -19,7 +19,7 @@ def _command(commands: list[Command], raw: str) -> Command:
     return next(command for command in commands if command.raw == raw)
 
 
-def test_parse_typical_pkgbuild_preserves_raw_values() -> None:
+def test_parse_typical_pkgbuild_fields_and_raw_source() -> None:
     source = _fixture("pkgbuild", "typical.PKGBUILD")
 
     result = parse_pkgbuild(source)
@@ -46,8 +46,11 @@ def test_parse_typical_pkgbuild_preserves_raw_values() -> None:
     assert pkgbuild.provides == ["demo"]
     assert pkgbuild.conflicts == ["demo-git"]
     assert pkgbuild.replaces == ["demo-old"]
-    # Variables are never expanded.
-    assert pkgbuild.source == ["$url/demo-$pkgver.tar.gz", "demo.patch"]
+    # Source values are expanded, `variables` and `raw` stay verbatim.
+    assert pkgbuild.source == [
+        "https://example.invalid/demo/demo-1.2.3.tar.gz",
+        "demo.patch",
+    ]
     assert pkgbuild.sha256sums == ["SKIP", "b1946ac92492d2347c6235b4d2611184"]
     assert pkgbuild.sha512sums == ["0123456789abcdef"]
     assert pkgbuild.md5sums == ["0123456789abcdef0123456789abcdef"]
@@ -76,7 +79,7 @@ sha256sums_aarch64=('{strong}')
 
     pkgbuild = result.pkgbuild
     assert pkgbuild is not None
-    assert pkgbuild.source == ["$url/base.tar.gz"]
+    assert pkgbuild.source == ["https://example.invalid/demo/base.tar.gz"]
     assert pkgbuild.sha256sums == [strong]
     assert pkgbuild.sources_by_arch == {
         "x86_64": ["https://example.invalid/demo-x86_64.tar.gz"],
@@ -84,6 +87,108 @@ sha256sums_aarch64=('{strong}')
     }
     assert pkgbuild.checksums_by_arch["x86_64"]["sha256sums"] == [strong]
     assert pkgbuild.checksums_by_arch["aarch64"]["sha256sums"] == [strong]
+
+
+def test_parse_expands_variables_in_sources() -> None:
+    source = """\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+_base="https://example.invalid/releases"
+url="$_base/demo"
+source=(
+  "$_base/demo-$pkgver.tar.gz"
+  "${_base}/demo.patch"
+  "$pkgname-$pkgver.tar.gz"
+  "missing-$pkgver-$unknown.tar.gz"
+)
+sha256sums=('SKIP')
+"""
+
+    result = parse_pkgbuild(source)
+
+    pkgbuild = result.pkgbuild
+    assert pkgbuild is not None
+    assert pkgbuild.source == [
+        "https://example.invalid/releases/demo-1.0.tar.gz",
+        "https://example.invalid/releases/demo.patch",
+        "demo-1.0.tar.gz",
+        "missing-1.0-$unknown.tar.gz",
+    ]
+    # The variable map and the raw text keep the unexpanded form.
+    assert pkgbuild.variables["source"] == [
+        "$_base/demo-$pkgver.tar.gz",
+        "${_base}/demo.patch",
+        "$pkgname-$pkgver.tar.gz",
+        "missing-$pkgver-$unknown.tar.gz",
+    ]
+
+
+def test_parse_expands_architecture_specific_sources_and_checksums() -> None:
+    strong = "b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184"
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64' 'i686')
+_base="https://example.invalid/releases"
+source=("$_base/demo-$pkgver.tar.gz")
+sha256sums=('{strong}')
+source_x86_64=("${{_base}}/demo-x86_64-$pkgver.tar.gz")
+sha256sums_x86_64=('{strong}')
+source_i686=("$_base/demo-i686-$pkgver.tar.gz")
+sha512sums_i686=('{strong}')
+"""
+
+    result = parse_pkgbuild(source)
+
+    pkgbuild = result.pkgbuild
+    assert pkgbuild is not None
+    assert pkgbuild.sources_by_arch == {
+        "x86_64": ["https://example.invalid/releases/demo-x86_64-1.0.tar.gz"],
+        "i686": ["https://example.invalid/releases/demo-i686-1.0.tar.gz"],
+    }
+    assert pkgbuild.checksums_by_arch["x86_64"]["sha256sums"] == [strong]
+    assert pkgbuild.checksums_by_arch["i686"]["sha512sums"] == [strong]
+
+
+def test_parse_leaves_unresolved_and_array_variables_unexpanded() -> None:
+    source = """\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+_mirrors=('https://a.invalid' 'https://b.invalid')
+source=("$missing/x.tar.gz" "$_mirrors/x.tar.gz")
+sha256sums=('SKIP' 'SKIP')
+"""
+
+    result = parse_pkgbuild(source)
+
+    pkgbuild = result.pkgbuild
+    assert pkgbuild is not None
+    assert pkgbuild.source == ["$missing/x.tar.gz", "$_mirrors/x.tar.gz"]
+
+
+def test_parse_expands_url_variables() -> None:
+    source = """\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+_domain="example.invalid"
+url="https://$_domain/demo"
+source=("$url/demo-$pkgver.tar.gz")
+sha256sums=('SKIP')
+"""
+
+    result = parse_pkgbuild(source)
+
+    pkgbuild = result.pkgbuild
+    assert pkgbuild is not None
+    assert pkgbuild.url == "https://example.invalid/demo"
+    assert pkgbuild.source == ["https://example.invalid/demo/demo-1.0.tar.gz"]
 
 
 def test_parse_typical_pkgbuild_functions_and_lines() -> None:

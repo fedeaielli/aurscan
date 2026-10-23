@@ -224,7 +224,10 @@ Run `aurscan --explain RULE_ID` for the full description of any rule.
 
 - Static analysis cannot see runtime behaviour, downloaded payloads, or
   commands generated dynamically by a build.
-- Variables are not expanded for reporting; findings show the raw source slice.
+- Only top-level `$var` / `${var}` references in `source`, `source_<arch>`,
+  checksum and `url` values are expanded, so source rules see the real host.
+  Computed values, command substitution, and variables defined as arrays stay
+  as written, and other findings show the raw source slice.
 - If the repository cannot be cloned, the report falls back to metadata-only
   analysis and says so. Content rules and history checks are then unavailable.
 - With history enabled the clone includes the last 10 commits, so it can be
@@ -233,8 +236,8 @@ Run `aurscan --explain RULE_ID` for the full description of any rule.
   continues on content only, and `history skipped: ...` appears in the report
   errors.
 - Architecture-specific variables such as `source_x86_64` and
-  `sha256sums_x86_64` are tracked explicitly, but arbitrary computed variable
-  names are not resolved.
+  `sha256sums_x86_64` are tracked and expanded alongside the base arrays, but
+  arbitrary computed variable names are not resolved.
 - AUR metadata can be stale, and maintainer history is limited to the commits
   available from the shallow clone.
 - Rules are heuristics. Investigate every `risky` result and treat `ok` as
