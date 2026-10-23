@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path, PurePosixPath
 
 from aurscan.clone import DEFAULT_TIMEOUT_SECONDS, clone_package
+from aurscan.constants import INSTALL_SUFFIX, PKGBUILD_FILENAME
 from aurscan.errors import AurscanError, CloneResourceError
 from aurscan.history import HISTORY_COMMITS, Commit, read_commits
 from aurscan.models import ParseResult
@@ -13,9 +14,6 @@ from aurscan.parse import parse_install_script, parse_pkgbuild
 from aurscan.safepaths import iter_regular_files, read_text_safe
 from aurscan.shell import expand_variables
 from aurscan.validation import validate_package_name
-
-PKGBUILD_FILENAME = "PKGBUILD"
-_INSTALL_SUFFIX = ".install"
 
 
 def parse_package(
@@ -194,7 +192,7 @@ def _install_candidates(
             relative = path.relative_to(root)
         except ValueError:
             continue
-        if len(relative.parts) != 1 or not relative.name.endswith(_INSTALL_SUFFIX):
+        if len(relative.parts) != 1 or not relative.name.endswith(INSTALL_SUFFIX):
             continue
         candidates.append(relative.as_posix())
 

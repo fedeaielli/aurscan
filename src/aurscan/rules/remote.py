@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from aurscan.constants import PKGBUILD_FILENAME
 from aurscan.models import Finding, Severity
 from aurscan.rules import RuleContext, register
 from aurscan.rules.common import (
@@ -32,7 +33,7 @@ def r07_network_in_build(ctx: RuleContext) -> list[Finding]:
                 "R07",
                 Severity.MEDIUM,
                 f"{network_label(command.name)} runs inside {function}()",
-                "PKGBUILD",
+                PKGBUILD_FILENAME,
                 line=command.line,
                 snippet=command.raw,
             )

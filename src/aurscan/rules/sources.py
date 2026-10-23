@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from aurscan.constants import PKGBUILD_FILENAME
 from aurscan.models import Finding, Pkgbuild, Severity
 from aurscan.rules import RuleContext, register
 from aurscan.rules.common import (
@@ -51,7 +52,7 @@ def r04_foreign_source(ctx: RuleContext) -> list[Finding]:
                         "R04",
                         Severity.MEDIUM,
                         f"source is hosted on user-content host {host}",
-                        "PKGBUILD",
+                        PKGBUILD_FILENAME,
                         line=line,
                         snippet=source,
                     )
@@ -62,7 +63,7 @@ def r04_foreign_source(ctx: RuleContext) -> list[Finding]:
                         "R04",
                         Severity.MEDIUM,
                         f"source host {host} differs from upstream host {upstream}",
-                        "PKGBUILD",
+                        PKGBUILD_FILENAME,
                         line=line,
                         snippet=source,
                     )
@@ -111,7 +112,7 @@ def r05_insecure_transport(ctx: RuleContext) -> list[Finding]:
                     "R05",
                     severity,
                     f"source uses {server}",
-                    "PKGBUILD",
+                    PKGBUILD_FILENAME,
                     line=_source_line(pkgbuild, group, index),
                     snippet=source,
                 )
@@ -180,7 +181,7 @@ def r06_checksum_coverage(ctx: RuleContext) -> list[Finding]:
             "R06",
             Severity.LOW,
             "; ".join(problems),
-            "PKGBUILD",
+            PKGBUILD_FILENAME,
             line=line,
             snippet=checksum,
         )
