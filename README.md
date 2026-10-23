@@ -37,7 +37,7 @@ a plain-English finding for every rule that fires.
   tree-sitter; never sources or executes them.
 - **Architecture-aware** — tracks `source_x86_64`, `sha256sums_x86_64`, and
   other architecture-specific variables.
-- **19 rules** covering downloads, obfuscation, persistence, permissions,
+- **20 rules** covering downloads, obfuscation, persistence, permissions,
   sensitive paths, checksum coverage, and package metadata.
 - **Weighted score** with `ok`, `review`, and `risky` verdicts.
 - **Human and JSON output** — use it interactively or pipe it into CI.
@@ -215,6 +215,7 @@ hidden by many low-severity ones. Weights and thresholds live in
 | `R13` | high | Reverse shells, netcat execution, or FIFO/netcat pairs. |
 | `R14` | high | Access to SSH/GPG/AWS keys, browser profiles, or crypto wallets. |
 | `R15` | medium | `install=` declared in the PKGBUILD but missing from the clone. |
+| `R17` | high | `install -m` that sets the setuid or setgid bit (plain modes like `0755` are not flagged). |
 
 </details>
 

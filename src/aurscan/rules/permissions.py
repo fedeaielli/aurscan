@@ -1,4 +1,4 @@
-"""R09-R10: setuid/setgid bits and writes outside ``$pkgdir``."""
+"""R09-R10, R17: setuid/setgid bits and writes outside ``$pkgdir``."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import re
 from aurscan.models import Command, Finding, Severity
 from aurscan.rules import RuleContext, register
 from aurscan.rules.common import (
+    BUILD_FUNCTIONS,
     finding,
     is_absolute_target,
     is_device_target,
@@ -17,9 +18,12 @@ from aurscan.rules.common import (
     write_destinations,
 )
 
-_OCTAL_MODE_RE = re.compile(r"^[0-7]{4}$")
+_OCTAL_DIGITS_RE = re.compile(r"^[0-7]+$")
 _MODE_TARGETS = "ugoa"
 _MODE_PERMISSIONS = "rwxXst"
+# Short options of ``install`` that consume a value, so a flag bundle can be
+# walked left to right without mistaking an option value for a flag.
+_INSTALL_ARG_SHORTS = frozenset({"S", "Z", "g", "m", "o", "t"})
 
 
 @register("R09", Severity.HIGH)
@@ -82,6 +86,44 @@ def r10_write_outside_pkgdir(ctx: RuleContext) -> list[Finding]:
     return findings
 
 
+@register("R17", Severity.HIGH)
+def r17_install_privilege_bits(ctx: RuleContext) -> list[Finding]:
+    """Flag ``install -m`` modes that set the setuid or setgid bit.
+
+    This is the install-command counterpart of :func:`r09_privilege_bits`:
+    ``install -m 4755`` never ran ``chmod``, so R09 cannot see it. Setuid is
+    high and setgid-only is low, matching R09. Only ``prepare``, ``build``,
+    ``package`` and ``package_*`` are inspected; plain modes such as ``0755``
+    and bit-removing modes such as ``u-s`` are ignored. A mode held in a
+    variable, or carried by a flag bundle without an inline value, is not
+    resolved and therefore never reported.
+    """
+    findings: list[Finding] = []
+    for function, command in iter_pkgbuild_commands(ctx.pkgbuild):
+        if function not in BUILD_FUNCTIONS and not is_package_function(function):
+            continue
+        if command.name != "install":
+            continue
+        bits = [_bits_of(mode) for mode in _install_modes(command)]
+        setuid = any(user_bit for user_bit, _group_bit in bits)
+        setgid = any(group_bit for _user_bit, group_bit in bits)
+        if not setuid and not setgid:
+            continue
+        severity = Severity.HIGH if setuid else Severity.LOW
+        description = "sets the setuid bit" if setuid else "sets the setgid bit"
+        findings.append(
+            finding(
+                "R17",
+                severity,
+                f"install -m {description} in {function}()",
+                "PKGBUILD",
+                line=command.line,
+                snippet=command.raw,
+            )
+        )
+    return findings
+
+
 def _mode_bits(command: Command) -> tuple[bool, bool]:
     """Return ``(setuid, setgid)`` for the mode argument of a chmod command.
 
@@ -91,13 +133,53 @@ def _mode_bits(command: Command) -> tuple[bool, bool]:
     mode = next(
         (argument for argument in command.args if not argument.startswith("-")), None
     )
-    if mode is None:
-        return False, False
-    if _OCTAL_MODE_RE.match(mode):
-        first = int(mode[0], 8)
-        return bool(first & 4), bool(first & 2)
+    return _bits_of(mode) if mode else (False, False)
 
-    return _symbolic_mode_bits(mode)
+
+def _bits_of(mode: str) -> tuple[bool, bool]:
+    """Return ``(setuid, setgid)`` for a chmod or install mode string."""
+    return _octal_bits(mode) if _OCTAL_DIGITS_RE.match(mode) else _symbolic_mode_bits(mode)
+
+
+def _octal_bits(mode: str) -> tuple[bool, bool]:
+    """Return the special bits of an octal mode, ignoring leading zeros.
+
+    Fewer than four significant digits (``755``, ``0644``) cannot carry the
+    setuid or setgid bit, so they are never flagged.
+    """
+    digits = mode.lstrip("0")
+    if len(digits) < 4:
+        return False, False
+    first = int(digits[0], 8)
+    return bool(first & 4), bool(first & 2)
+
+
+def _install_modes(command: Command) -> list[str]:
+    """Return the ``-m``/``--mode`` values of an ``install`` command line."""
+    modes: list[str] = []
+    args = command.args
+    for index, argument in enumerate(args):
+        value = ""
+        if argument in {"-m", "--mode"}:
+            value = args[index + 1] if index + 1 < len(args) else ""
+        elif argument.startswith("--mode="):
+            value = argument.partition("=")[2]
+        elif argument.startswith("-") and not argument.startswith("--"):
+            value = _bundled_mode(argument) or ""
+        if value:
+            modes.append(value)
+    return modes
+
+
+def _bundled_mode(flags: str) -> str | None:
+    """Return the mode carried inline by a short-flag bundle such as ``-Dm755``."""
+    for position, flag in enumerate(flags[1:], start=1):
+        if flag not in _INSTALL_ARG_SHORTS:
+            continue
+        if flag != "m":
+            return None
+        return flags[position + 1 :] or None
+    return None
 
 
 def _symbolic_mode_bits(mode: str) -> tuple[bool, bool]:

@@ -8,6 +8,9 @@ sha256sums=('b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184')
 
 package() {
   install -Dm755 demo "$pkgdir/usr/bin/demo"
+  install -m 4755 demo "$pkgdir/usr/bin/setuid-demo"
+  install -D -m g+s demo "$pkgdir/usr/bin/setgid-demo"
+  install --mode=u+s demo "$pkgdir/usr/bin/long-option"
   chmod 4755 "$pkgdir/usr/bin/demo"
   chmod 2755 "$pkgdir/usr/bin/helper"
   cp demo /usr/local/bin/demo

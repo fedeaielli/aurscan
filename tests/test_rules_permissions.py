@@ -1,4 +1,4 @@
-"""Per-rule tests for R09-R10."""
+"""Per-rule tests for R09-R10, R17."""
 
 from __future__ import annotations
 
@@ -104,3 +104,90 @@ package() {
 }
 """
     assert by_rule(run_rules(source), "R10") == []
+
+
+def test_r17_setuid_install_modes_are_high_and_setgid_is_low() -> None:
+    source = """\
+package() {
+  install -m 4755 demo "$pkgdir/usr/bin/setuid"
+  install -m4755 demo "$pkgdir/usr/bin/attached"
+  install -m u+s demo "$pkgdir/usr/bin/symbolic"
+  install --mode=u+s demo "$pkgdir/usr/bin/long-option"
+  install -D -m 6755 -o root demo "$pkgdir/usr/bin/both"
+  install -m 2755 demo "$pkgdir/usr/bin/group"
+  install -m g+s demo "$pkgdir/usr/bin/group-symbolic"
+}
+"""
+    findings = by_rule(run_rules(source), "R17")
+
+    assert [(finding.line, finding.severity) for finding in findings] == [
+        (2, Severity.HIGH),
+        (3, Severity.HIGH),
+        (4, Severity.HIGH),
+        (5, Severity.HIGH),
+        (6, Severity.HIGH),
+        (7, Severity.LOW),
+        (8, Severity.LOW),
+    ]
+    assert all("install -m" in finding.message for finding in findings)
+
+
+def test_r17_ignores_plain_and_bit_removing_modes() -> None:
+    source = """\
+package() {
+  install -Dm755 demo "$pkgdir/usr/bin/demo"
+  install -Dm0644 doc "$pkgdir/usr/share/doc/doc"
+  install -m 0755 demo "$pkgdir/usr/bin/padded"
+  install -m 00755 demo "$pkgdir/usr/bin/padded-more"
+  install -m 755 demo "$pkgdir/usr/bin/plain"
+  install -m 644 demo "$pkgdir/usr/bin/file"
+  install -d -m 755 "$pkgdir/usr/share/data"
+  install -m u-s demo "$pkgdir/usr/bin/removed"
+  install -m u=rwx demo "$pkgdir/usr/bin/exact"
+  install demo "$pkgdir/usr/bin/no-mode"
+}
+"""
+    assert by_rule(run_rules(source), "R17") == []
+
+
+def test_r17_only_runs_inside_build_and_package_functions() -> None:
+    source = """\
+prepare() {
+  install -m 4755 demo "$pkgdir/usr/bin/prepare"
+}
+
+build() {
+  install -m 4755 demo "$pkgdir/usr/bin/build"
+}
+
+package_extra() {
+  install -m 4755 demo "$pkgdir/usr/bin/extra"
+}
+
+_helper() {
+  install -m 4755 demo /tmp/helper
+}
+
+check() {
+  install -m 4755 demo /tmp/check
+}
+"""
+    findings = by_rule(run_rules(source), "R17")
+
+    assert len(findings) == 3
+    assert sorted(finding.message for finding in findings) == [
+        "install -m sets the setuid bit in build()",
+        "install -m sets the setuid bit in package_extra()",
+        "install -m sets the setuid bit in prepare()",
+    ]
+
+
+def test_r17_does_not_guess_unresolved_modes() -> None:
+    source = """\
+package() {
+  install -m "$mode" demo "$pkgdir/usr/bin/from-variable"
+  install -m "$(printf 4755)" demo "$pkgdir/usr/bin/from-substitution"
+  install -Dm demo "$pkgdir/usr/bin/from-flag-bundle"
+}
+"""
+    assert by_rule(run_rules(source), "R17") == []
