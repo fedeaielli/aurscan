@@ -10,12 +10,7 @@ from aurscan.errors import (
     SafetyError,
     UnsafePathError,
 )
-from aurscan.safepaths import (
-    iter_regular_files,
-    list_symlinks,
-    read_text_safe,
-    resolve_within,
-)
+from aurscan.safepaths import iter_regular_files, read_text_safe
 
 
 @pytest.fixture
@@ -91,30 +86,8 @@ def test_iter_regular_files_skips_symlinks(root: Path) -> None:
     assert relative == {"PKGBUILD", "sub/demo.install"}
 
 
-def test_list_symlinks_does_not_follow(root: Path) -> None:
-    (root / "link").symlink_to(root / "PKGBUILD")
-    (root / "dirlink").symlink_to(root / "sub", target_is_directory=True)
-    found = {path.name for path in list_symlinks(root)}
-    assert found == {"link", "dirlink"}
-
-
 def test_walk_enforces_entry_limit(root: Path) -> None:
     (root / "extra").write_text("x", encoding="utf-8")
     (root / "more").write_text("x", encoding="utf-8")
     with pytest.raises(SafetyError, match="entries"):
         list(iter_regular_files(root, max_entries=2))
-
-
-def test_resolve_within_returns_path(root: Path) -> None:
-    assert resolve_within(root, "sub/demo.install") == root / "sub" / "demo.install"
-
-
-def test_resolve_within_rejects_symlink(root: Path) -> None:
-    (root / "link").symlink_to(root / "PKGBUILD")
-    with pytest.raises(UnsafePathError):
-        resolve_within(root, "link")
-
-
-def test_resolve_within_rejects_missing_file(root: Path) -> None:
-    with pytest.raises(UnsafePathError):
-        resolve_within(root, "missing")

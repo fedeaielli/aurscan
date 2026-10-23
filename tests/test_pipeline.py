@@ -174,10 +174,13 @@ def test_parse_package_with_history_uses_a_single_clone(
         "demo", _git_url=repo.as_uri(), history_commits=2
     )
 
+    head = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    parent = _git(repo, "rev-parse", "HEAD~1").stdout.strip()
+
     assert clone_depths == [3]
     assert result.parse_failed is False
     assert result.pkgbuild is not None
-    assert [commit.message for commit in commits] == ["second", "initial"]
+    assert [commit.hash for commit in commits] == [head, parent]
 
 
 def test_parse_package_with_history_forwards_timeout_to_clone(

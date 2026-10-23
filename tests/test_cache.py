@@ -138,8 +138,8 @@ def test_default_cache_dir_falls_back_to_home(tmp_path: Path, monkeypatch) -> No
 
 
 def test_permissions_are_restrictive(tmp_path: Path) -> None:
-    cache = ResponseCache(tmp_path / "cache")
-    cache.put(URL, b"body")
+    directory = tmp_path / "cache"
+    ResponseCache(directory).put(URL, b"body")
 
-    assert os.stat(cache.directory).st_mode & 0o777 == 0o700
-    assert os.stat(_entry(cache.directory)).st_mode & 0o777 == 0o600
+    assert os.stat(directory).st_mode & 0o777 == 0o700
+    assert os.stat(_entry(directory)).st_mode & 0o777 == 0o600

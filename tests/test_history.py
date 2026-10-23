@@ -105,12 +105,13 @@ def test_read_commits_returns_recent_commits_newest_first(tmp_path: Path) -> Non
         _write(repo, "notes.txt", f"change {index}\n")
         _commit(repo, f"change {index}", "Alice")
 
+    head = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    previous = _git(repo, "rev-parse", "HEAD~1").stdout.strip()
+
     commits = _read_history(repo, n=3)
 
-    assert [commit.message for commit in commits] == ["change 4", "change 3", "change 2"]
-    assert commits[0].date.tzinfo is not None
+    assert [commit.hash for commit in commits][:2] == [head, previous]
     assert commits[0].author == "Alice"
-    assert "notes.txt" in commits[0].files
     assert "PKGBUILD" in commits[0].tree_files
     # The oldest returned commit was diffed against the extra fetched parent.
     assert commits[-1].added_lines
@@ -219,5 +220,5 @@ def test_read_commits_reads_an_existing_clone(tmp_path: Path) -> None:
 
     commits = read_commits(clone, n=2, label="demo")
 
-    assert [commit.message for commit in commits] == ["third", "second"]
+    assert [commit.author for commit in commits] == ["Carol", "Bob"]
     assert commits[0].hash != commits[1].hash

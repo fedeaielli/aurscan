@@ -19,9 +19,6 @@ def _commit(author: str, hash_char: str) -> Commit:
     return Commit(
         hash=hash_char * 40,
         author=author,
-        date=NOW,
-        message="update",
-        files=["PKGBUILD"],
         tree_files=["PKGBUILD"],
     )
 

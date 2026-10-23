@@ -13,27 +13,6 @@ MAX_TEXT_BYTES = 1024 * 1024
 _MAX_ENTRIES = 10_000
 
 
-def resolve_within(root: Path, relative: str) -> Path:
-    """Resolve ``relative`` under ``root`` without allowing ``..`` or symlinks."""
-    root_path = _root_path(root)
-    parts = _relative_parts(relative)
-    dir_fd = _open_root_dir(root_path)
-    try:
-        for part in parts[:-1]:
-            next_fd = _open_dir_at(dir_fd, part, relative)
-            os.close(dir_fd)
-            dir_fd = next_fd
-        try:
-            info = os.stat(parts[-1], dir_fd=dir_fd, follow_symlinks=False)
-        except OSError as exc:
-            raise UnsafePathError(f"path does not exist: {relative!r}") from exc
-        if stat.S_ISLNK(info.st_mode):
-            raise UnsafePathError(f"symlink not allowed: {relative!r}")
-    finally:
-        os.close(dir_fd)
-    return root_path.joinpath(*parts)
-
-
 def read_text_safe(
     root: Path,
     relative: str,
@@ -78,11 +57,6 @@ def iter_regular_files(root: Path, *, max_entries: int = _MAX_ENTRIES) -> Iterat
     for path in _walk_entries(root, max_entries=max_entries):
         if _is_regular_file(path):
             yield path
-
-
-def list_symlinks(root: Path, *, max_entries: int = _MAX_ENTRIES) -> list[Path]:
-    """Return symlink paths under ``root`` without following them."""
-    return [path for path in _walk_entries(root, max_entries=max_entries) if path.is_symlink()]
 
 
 def _walk_entries(root: Path, *, max_entries: int) -> Iterator[Path]:

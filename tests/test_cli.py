@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -356,9 +355,6 @@ def test_history_findings_are_reported(
     commit = Commit(
         hash="a" * 40,
         author="Bob",
-        date=datetime(2026, 1, 1, tzinfo=UTC),
-        message="add update step",
-        files=["PKGBUILD"],
         added_lines={"PKGBUILD": [8]},
         content={"PKGBUILD": REVIEW_PKGBUILD},
         tree_files=["PKGBUILD"],
@@ -380,9 +376,6 @@ def test_working_tree_finding_keeps_history_context(
     commit = Commit(
         hash="a" * 40,
         author="Bob",
-        date=datetime(2026, 1, 1, tzinfo=UTC),
-        message="add pipe",
-        files=["PKGBUILD"],
         added_lines={"PKGBUILD": [8]},
         content={"PKGBUILD": REVIEW_PKGBUILD},
         tree_files=["PKGBUILD"],

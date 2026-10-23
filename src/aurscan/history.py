@@ -10,10 +10,9 @@ from __future__ import annotations
 import re
 import subprocess
 from collections.abc import Sequence
-from datetime import datetime
 from pathlib import Path
 
-from pydantic import AwareDatetime, Field
+from pydantic import Field
 
 from aurscan.clone import git_env
 from aurscan.errors import HistoryError
@@ -44,9 +43,6 @@ class Commit(AurscanModel):
 
     hash: str
     author: str
-    date: AwareDatetime
-    message: str
-    files: list[str] = Field(default_factory=list)
     added_lines: dict[str, list[int]] = Field(default_factory=dict)
     content: dict[str, str] = Field(default_factory=dict)
     tree_files: list[str] = Field(default_factory=list)
@@ -79,17 +75,10 @@ def read_commits(
         raise HistoryError(f"no commits found for {label}")
 
     commits: list[Commit] = []
-    for index, (hash_value, author, date, message) in enumerate(records[:n]):
+    for index, (hash_value, author) in enumerate(records[:n]):
         parent = records[index + 1][0] if index + 1 < len(records) else None
         commits.append(
-            _build_commit(
-                repo,
-                hash_value=hash_value,
-                parent=parent,
-                author=author,
-                date=date,
-                message=message,
-            )
+            _build_commit(repo, hash_value=hash_value, parent=parent, author=author)
         )
     return commits
 
@@ -159,8 +148,6 @@ def _build_commit(
     hash_value: str,
     parent: str | None,
     author: str,
-    date: datetime,
-    message: str,
 ) -> Commit:
     tree_files = _tree_files(repo, hash_value)
     changed = _changed_files(repo, hash_value)
@@ -169,38 +156,21 @@ def _build_commit(
     return Commit(
         hash=hash_value,
         author=sanitize_text(author, max_length=200) or "unknown",
-        date=date,
-        message=sanitize_text(message, max_length=500),
-        files=changed,
         added_lines=added_lines,
         content=content,
         tree_files=tree_files,
     )
 
 
-def _log_records(repo: Path, limit: int) -> list[tuple[str, str, datetime, str]]:
-    """Return ``(hash, author, date, message)`` records, newest first."""
-    raw = _run_git(
-        repo,
-        "log",
-        f"--max-count={limit}",
-        "--format=%H%x00%an%x00%aI%x00%B%x00",
-    )
-    fields = raw.split("\x00")
-    records: list[tuple[str, str, datetime, str]] = []
-    for index in range(0, len(fields) - 3, 4):
-        hash_value = fields[index].strip()
-        if not hash_value:
-            continue
-        author = fields[index + 1].strip()
-        date_text = fields[index + 2].strip()
-        message = fields[index + 3].strip()
-        try:
-            date = datetime.fromisoformat(date_text)
-        except ValueError as exc:
-            raise HistoryError(f"invalid commit date for {hash_value[:SHORT_HASH_LENGTH]}") from exc
-        records.append((hash_value, author, date, message))
-    return records
+def _log_records(repo: Path, limit: int) -> list[tuple[str, str]]:
+    """Return ``(hash, author)`` records, newest first."""
+    raw = _run_git(repo, "log", f"--max-count={limit}", "--format=%H%x00%an%x00")
+    fields = [field.strip() for field in raw.split("\x00")]
+    return [
+        (fields[index], fields[index + 1])
+        for index in range(0, len(fields) - 1, 2)
+        if fields[index]
+    ]
 
 
 def _tree_files(repo: Path, hash_value: str) -> list[str]:

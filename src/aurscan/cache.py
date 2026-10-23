@@ -35,10 +35,6 @@ class ResponseCache:
         self._ttl = ttl
         self._clock = clock
 
-    @property
-    def directory(self) -> Path:
-        return self._directory
-
     def get(self, url: str) -> bytes | None:
         """Return the cached body for ``url``, or ``None`` on a miss."""
         path = self._entry_path(url)
