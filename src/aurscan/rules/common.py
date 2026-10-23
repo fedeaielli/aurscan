@@ -339,6 +339,18 @@ def source_groups(pkgbuild: Pkgbuild) -> tuple[SourceGroup, ...]:
     return tuple(groups)
 
 
+def source_entries(pkgbuild: Pkgbuild, label: str) -> list[str]:
+    """Return the unexpanded entries of a source variable (``source`` or ``source_<arch>``).
+
+    Findings must point at the original slice, so rules resolve the line from
+    these entries instead of the expanded value in ``source_groups()``.
+    """
+    value = pkgbuild.variables.get(label)
+    if isinstance(value, list):
+        return [item for item in value if item != ""]
+    return [value] if value else []
+
+
 def aligned_strong_checksum_in(group: SourceGroup, index: int) -> str | None:
     """Return a non-SKIP strong checksum aligned with a source group entry."""
     if index >= len(group.sources):

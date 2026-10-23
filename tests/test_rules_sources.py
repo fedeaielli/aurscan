@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from aurscan.models import Severity
 from aurscan.rules.common import same_domain
 from tests.rules_utils import by_rule, run_rules
 
 STRONG = "b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184"
+SOURCES_VAR_FIXTURE = Path(__file__).parent / "fixtures" / "suspicious" / "sources_var.PKGBUILD"
 
 
 def test_r04_flags_foreign_and_user_content_hosts() -> None:
@@ -305,3 +308,51 @@ sha256sums=('SKIP' '{STRONG}')
     assert findings[0].severity == Severity.LOW
     assert "SKIP" in findings[0].message
     assert "mismatch" not in findings[0].message
+
+
+def test_r04_reports_each_arch_source_on_its_own_line() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64' 'aarch64')
+url="https://example.invalid/demo"
+_channel=stable
+source_x86_64=("https://mirror.invalid/demo-${{_channel}}-amd64.tar.gz")
+source_aarch64=("https://mirror.invalid/demo-${{_channel}}-arm64.tar.gz")
+sha256sums_x86_64=('{STRONG}')
+sha256sums_aarch64=('{STRONG}')
+"""
+    findings = by_rule(run_rules(source), "R04")
+
+    assert [finding.line for finding in findings] == [7, 8]
+    # Snippets keep the expanded form the rule inspected.
+    assert sorted(finding.snippet or "" for finding in findings) == [
+        "https://mirror.invalid/demo-stable-amd64.tar.gz",
+        "https://mirror.invalid/demo-stable-arm64.tar.gz",
+    ]
+
+
+def test_r04_and_r05_lines_come_from_raw_entries() -> None:
+    findings = run_rules(SOURCES_VAR_FIXTURE.read_text(encoding="utf-8"))
+
+    assert [finding.line for finding in by_rule(findings, "R04")] == [10, 11, 19]
+    assert [finding.line for finding in by_rule(findings, "R05")] == [11, 19]
+
+
+def test_r04_still_dedupes_two_foreign_sources_on_one_line() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+url="https://example.invalid/demo"
+source=("https://a.invalid/x.tar.gz" "https://b.invalid/y.tar.gz")
+sha256sums=('{STRONG}' '{STRONG}')
+"""
+    findings = by_rule(run_rules(source), "R04")
+
+    assert len(findings) == 1
+    assert findings[0].line == 6
+    assert "a.invalid" in findings[0].message
+    assert "b.invalid" in findings[0].message

@@ -5,6 +5,7 @@ from __future__ import annotations
 from aurscan.models import Finding, Pkgbuild, Severity
 from aurscan.rules import RuleContext, register
 from aurscan.rules.common import (
+    SourceGroup,
     aligned_strong_checksum_in,
     finding,
     host_of,
@@ -13,6 +14,7 @@ from aurscan.rules.common import (
     is_vcs_source,
     line_of,
     same_domain,
+    source_entries,
     source_groups,
     source_url,
     url_scheme,
@@ -36,13 +38,13 @@ def r04_foreign_source(ctx: RuleContext) -> list[Finding]:
 
     findings: list[Finding] = []
     for group in source_groups(pkgbuild):
-        for source in group.sources:
+        for index, source in enumerate(group.sources):
             if is_vcs_source(source):
                 continue
             host = host_of(source_url(source))
             if host is None:
                 continue
-            line = _source_line(pkgbuild, source)
+            line = _source_line(pkgbuild, group, index)
             if is_user_content_host(host):
                 findings.append(
                     finding(
@@ -110,7 +112,7 @@ def r05_insecure_transport(ctx: RuleContext) -> list[Finding]:
                     severity,
                     f"source uses {server}",
                     "PKGBUILD",
-                    line=_source_line(pkgbuild, source),
+                    line=_source_line(pkgbuild, group, index),
                     snippet=source,
                 )
             )
@@ -185,9 +187,13 @@ def r06_checksum_coverage(ctx: RuleContext) -> list[Finding]:
     ]
 
 
-def _source_line(pkgbuild: Pkgbuild, source: str) -> int | None:
+def _source_line(pkgbuild: Pkgbuild, group: SourceGroup, index: int) -> int | None:
+    """Locate a source entry by its raw slice, then the expanded form, then its variable."""
+    expanded = group.sources[index]
+    raw_entries = source_entries(pkgbuild, group.label)
+    raw = raw_entries[index] if index < len(raw_entries) else expanded
     return (
-        line_of(pkgbuild.raw, source)
-        or line_of(pkgbuild.raw, "source=")
-        or line_of(pkgbuild.raw, "source_")
+        line_of(pkgbuild.raw, raw)
+        or line_of(pkgbuild.raw, expanded)
+        or line_of(pkgbuild.raw, f"{group.label}=")
     )
