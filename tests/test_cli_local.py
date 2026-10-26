@@ -49,6 +49,10 @@ def test_local_scan_reports_findings_and_risky_exit(
     assert "aurscan: download-demo" in out
     assert "version 1.0-1" in out
     assert "R01" in out
+    assert "Local scan" in out
+    assert str(tmp_path.resolve()) in out
+    assert "maintainer" not in out
+    assert "orphaned" not in out
 
 
 def test_local_json_report_uses_parsed_package_and_synthetic_metadata(

@@ -218,7 +218,9 @@ hidden by many low-severity ones. Weights and thresholds live in
 `--local` replaces steps 1–2: it reads the directory with the same safe,
 symlink-refusing file access and runs the content rules only. Metadata rules
 (`M02`–`M04`) and history rules (`M01`) are skipped because no AUR metadata or
-git history is available.
+git history is available. The human report replaces the metadata table with a
+`Local scan` block showing the resolved directory; the JSON report keeps the
+synthetic package block.
 
 ## Rule catalogue
 
