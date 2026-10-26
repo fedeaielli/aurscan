@@ -270,6 +270,9 @@ Run `aurscan --explain RULE_ID` for the full description of any rule.
 - Architecture-specific variables such as `source_x86_64` and
   `sha256sums_x86_64` are tracked and expanded alongside the base arrays, but
   arbitrary computed variable names are not resolved.
+- A checksum variable such as `sha256sums_x86_64` without a matching
+  `source_x86_64` is applied to the base sources. If the base checksum is also
+  present, the base one wins because a scan does not target one architecture.
 - `--local` cannot use AUR metadata, history, or `--deps`; the report shows
   synthetic metadata and notes that those analyses are unavailable.
 - AUR metadata can be stale, and maintainer history is limited to the commits

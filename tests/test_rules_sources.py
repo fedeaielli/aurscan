@@ -404,3 +404,101 @@ def test_source_x86_64_fixture_triggers_r04_r05_and_r06() -> None:
     assert r06[0].severity == Severity.LOW
     assert r06[0].line == 6
     assert "SKIP" in r06[0].message
+
+
+def test_r06_orphan_arch_checksum_applies_to_base_sources() -> None:
+    source = """\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+source=("a.tar.gz")
+sha256sums_x86_64=('SKIP')
+"""
+    findings = by_rule(run_rules(source), "R06")
+
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.LOW
+    assert findings[0].line == 5
+    assert "SKIP" in findings[0].message
+
+
+def test_r06_reports_orphan_arch_checksum_mismatch_name() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+source=("a.tar.gz" "b.tar.gz")
+sha256sums_x86_64=('{STRONG}')
+"""
+    findings = by_rule(run_rules(source), "R06")
+
+    assert len(findings) == 1
+    assert "source/checksum count mismatch" in findings[0].message
+    assert "sha256sums_x86_64" in findings[0].message
+
+
+def test_r06_evaluates_multiple_orphan_arch_checksums() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64' 'aarch64')
+source=("a.tar.gz")
+sha256sums_x86_64=('{STRONG}')
+sha256sums_aarch64=('SKIP')
+"""
+    findings = by_rule(run_rules(source), "R06")
+
+    assert len(findings) == 1
+    assert "1 checksum(s) are SKIP" in findings[0].message
+
+
+def test_r05_accepts_orphan_arch_strong_checksum() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+url="https://example.invalid/demo"
+source=("http://example.invalid/demo.tar.gz")
+sha256sums_x86_64=('{STRONG}')
+"""
+    findings = by_rule(run_rules(source), "R05")
+
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.LOW
+
+
+def test_base_checksum_wins_over_orphan_arch_checksum() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+url="https://example.invalid/demo"
+source=("http://example.invalid/demo.tar.gz")
+sha256sums=('SKIP')
+sha256sums_x86_64=('{STRONG}')
+"""
+    findings = by_rule(run_rules(source), "R05")
+
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.MEDIUM
+
+
+def test_orphan_arch_checksum_is_ignored_when_arch_source_exists() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+source=("a.tar.gz")
+sha256sums=('{STRONG}')
+source_x86_64=("b.tar.gz")
+sha256sums_x86_64=('{STRONG}')
+"""
+    findings = by_rule(run_rules(source), "R06")
+
+    assert findings == []
