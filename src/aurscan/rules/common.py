@@ -315,17 +315,32 @@ class SourceGroup:
 
 
 def source_groups(pkgbuild: Pkgbuild) -> tuple[SourceGroup, ...]:
-    """Return the base source group followed by every architecture-specific group."""
+    """Return the base source group followed by every architecture-specific group.
+
+    A checksum variable for an architecture without a matching ``source_<arch>``
+    applies to the base sources, so it joins the base group under its real
+    variable name. Base checksums win when both forms exist because the scan
+    does not target a single architecture.
+    """
+    base_checksums: dict[str, list[str]] = {
+        "sha256sums": pkgbuild.sha256sums,
+        "sha512sums": pkgbuild.sha512sums,
+        "md5sums": pkgbuild.md5sums,
+        "b2sums": pkgbuild.b2sums,
+    }
+    for arch, kinds in sorted(pkgbuild.checksums_by_arch.items()):
+        if arch in pkgbuild.sources_by_arch:
+            continue
+        for kind, values in sorted(kinds.items()):
+            if base_checksums[kind]:
+                continue
+            base_checksums[f"{kind}_{arch}"] = values
+
     groups = [
         SourceGroup(
             arch=None,
             sources=pkgbuild.source,
-            checksums={
-                "sha256sums": pkgbuild.sha256sums,
-                "sha512sums": pkgbuild.sha512sums,
-                "md5sums": pkgbuild.md5sums,
-                "b2sums": pkgbuild.b2sums,
-            },
+            checksums=base_checksums,
         )
     ]
     for arch in sorted(pkgbuild.sources_by_arch):
@@ -355,7 +370,15 @@ def aligned_strong_checksum_in(group: SourceGroup, index: int) -> str | None:
     """Return a non-SKIP strong checksum aligned with a source group entry."""
     if index >= len(group.sources):
         return None
-    for kind in ("sha256sums", "sha512sums"):
+    kinds = ["sha256sums", "sha512sums"]
+    kinds.extend(
+        sorted(
+            kind
+            for kind in group.checksums
+            if kind.startswith(("sha256sums_", "sha512sums_"))
+        )
+    )
+    for kind in kinds:
         values = group.checksums.get(kind, [])
         if len(values) != len(group.sources) or index >= len(values):
             continue
