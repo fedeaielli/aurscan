@@ -225,6 +225,13 @@ def test_help_exits_0(capsys: pytest.CaptureFixture[str]) -> None:
     assert "Usage" in capsys.readouterr().out
 
 
+def test_no_arguments_prints_help_and_exits_0(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert cli.main([]) == 0
+    assert "Usage" in capsys.readouterr().out
+
+
 @respx.mock
 def test_version_exits_0_without_network(capsys: pytest.CaptureFixture[str]) -> None:
     # No route is mocked, so any HTTP request would raise instead of silently passing.

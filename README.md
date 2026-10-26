@@ -140,6 +140,8 @@ Print the version and exit:
 aurscan --version
 ```
 
+Run `aurscan` with no arguments to print the help text and exit `0`.
+
 ## Example output
 
 ```text
