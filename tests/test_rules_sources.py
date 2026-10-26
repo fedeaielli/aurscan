@@ -10,6 +10,9 @@ from tests.rules_utils import by_rule, run_rules
 
 STRONG = "b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184"
 SOURCES_VAR_FIXTURE = Path(__file__).parent / "fixtures" / "suspicious" / "sources_var.PKGBUILD"
+SOURCE_X86_64_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "suspicious" / "source_x86_64.PKGBUILD"
+)
 
 
 def test_r04_flags_foreign_and_user_content_hosts() -> None:
@@ -356,3 +359,24 @@ sha256sums=('{STRONG}' '{STRONG}')
     assert findings[0].line == 6
     assert "a.invalid" in findings[0].message
     assert "b.invalid" in findings[0].message
+
+
+def test_source_x86_64_fixture_triggers_r04_r05_and_r06() -> None:
+    findings = run_rules(SOURCE_X86_64_FIXTURE.read_text(encoding="utf-8"))
+
+    r04 = by_rule(findings, "R04")
+    r05 = by_rule(findings, "R05")
+    r06 = by_rule(findings, "R06")
+
+    assert len(r04) == 1
+    assert r04[0].severity == Severity.MEDIUM
+    assert r04[0].line == 6
+
+    assert len(r05) == 1
+    assert r05[0].severity == Severity.MEDIUM
+    assert r05[0].line == 6
+
+    assert len(r06) == 1
+    assert r06[0].severity == Severity.LOW
+    assert r06[0].line == 6
+    assert "SKIP" in r06[0].message
