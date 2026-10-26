@@ -30,7 +30,6 @@ from aurscan.validation import sanitize_text, validate_package_name
 
 app = typer.Typer(
     add_completion=False,
-    no_args_is_help=True,
     help="Static risk scanner for AUR packages.",
 )
 
@@ -152,7 +151,9 @@ def scan(
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI and return an exit code. Usage errors map to 3, not 2."""
-    args = list(argv) if argv is not None else None
+    args = list(argv) if argv is not None else sys.argv[1:]
+    if not args:
+        args = ["--help"]
     try:
         app(args=args)
     except _CommandExit as exc:
