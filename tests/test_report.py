@@ -169,6 +169,33 @@ def test_render_human_uses_injected_scoring_config() -> None:
     assert "Risk: REVIEW (5/10)" in console.export_text()
 
 
+def test_render_human_local_scan_replaces_metadata_table(tmp_path: Path) -> None:
+    report = _empty_report("demo")
+    console = Console(record=True, width=120)
+
+    render_human(report, console, config=load_scoring_config(), local_path=tmp_path)
+
+    text = console.export_text()
+    assert "Local scan" in text
+    assert str(tmp_path) in text
+    assert "Metadata" not in text
+    assert "maintainer" not in text
+    assert "votes" not in text
+
+
+def test_render_human_local_scan_sanitizes_the_path(tmp_path: Path) -> None:
+    hostile = tmp_path / "evil\x1b[31mred"
+    hostile.mkdir()
+    report = _empty_report("demo")
+    console = Console(record=True, width=120)
+
+    render_human(report, console, config=load_scoring_config(), local_path=hostile)
+
+    text = console.export_text()
+    assert "\x1b" not in text
+    assert "evilred" in text
+
+
 def test_value_truncates_metadata_to_300_characters() -> None:
     assert _value("x" * 400).plain == "x" * 299 + "\u2026"
     assert _value("").plain == "\u2014"

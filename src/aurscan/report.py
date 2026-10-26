@@ -6,6 +6,7 @@ import json
 from collections import deque
 from collections.abc import Iterator, Sequence
 from datetime import datetime
+from pathlib import Path
 
 from rich.console import Console
 from rich.table import Table
@@ -100,11 +101,19 @@ def render_human(
     console: Console,
     *,
     config: ScoringConfig,
+    local_path: Path | None = None,
 ) -> None:
-    """Print the human-readable report."""
+    """Print the human-readable report.
+
+    ``local_path`` marks a ``--local`` scan: the AUR metadata table is replaced
+    by the directory that was analysed, because the metadata is synthetic.
+    """
     _render_header(report.package, console)
     _render_risk(report, console, config)
-    _render_metadata(report.package, console)
+    if local_path is None:
+        _render_metadata(report.package, console)
+    else:
+        _render_local_scan(local_path, console)
 
     if report.findings:
         _render_findings(report.findings, console)
@@ -181,6 +190,17 @@ def _render_metadata(info: PackageInfo, console: Console) -> None:
 
     for label, value in rows:
         table.add_row(label, value)
+    console.print(table)
+
+
+def _render_local_scan(path: Path, console: Console) -> None:
+    """Print the directory of a local scan in place of the AUR metadata table."""
+    console.print()
+    console.print(Text("Local scan", style="bold"))
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_column(style="cyan", no_wrap=True)
+    table.add_column()
+    table.add_row("directory", Text(_safe(str(path), 500)))
     console.print(table)
 
 

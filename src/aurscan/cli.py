@@ -164,6 +164,7 @@ def scan(
     try:
         cache: ResponseCache | None = None
         if local_path is not None:
+            local_path = local_path.resolve()
             if package is not None:
                 raise LocalPathError("--local cannot be combined with a package name")
             if deps:
@@ -208,7 +209,12 @@ def scan(
         if json_output:
             typer.echo(render_json(report))
         else:
-            render_human(report, Console(), config=config)
+            render_human(
+                report,
+                Console(),
+                config=config,
+                local_path=local_path,
+            )
         raise _CommandExit(int(_VERDICT_EXIT_CODES[highest_verdict(report)]))
     except AurscanError as exc:
         message = sanitize_text(str(exc), max_length=500) or exc.__class__.__name__
