@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
+
+from aurscan.rules import registry
 
 ROOT = Path(__file__).resolve().parents[1]
 PKGBUILD = ROOT / "PKGBUILD"
 README = ROOT / "README.md"
 LICENSE = ROOT / "LICENSE"
+RULE_ROW_RE = re.compile(r"^\| `([A-Z]\d\d)` \| ([a-z]+) \|", re.MULTILINE)
 
 REQUIRED_DEPENDS = (
     "python",
@@ -71,3 +75,28 @@ def test_readme_documents_install_usage_limits_and_rules() -> None:
     assert "uv tool install aurscan" in text
     assert "aurscan --explain R01" in text
     assert "GPL-3.0-or-later" in text
+
+
+def test_readme_rule_table_matches_registered_rules() -> None:
+    documented: dict[str, str] = {}
+    for rule_id, severity in RULE_ROW_RE.findall(README.read_text(encoding="utf-8")):
+        assert rule_id not in documented, f"duplicate README row for {rule_id}"
+        documented[rule_id] = severity
+
+    expected = {rule.rule_id: rule.severity.value for rule in registry.rules}
+    m01 = registry.explain("M01")
+    assert m01 is not None
+    expected["M01"] = m01[0].value
+
+    missing_in_readme = sorted(set(expected) - set(documented))
+    missing_in_registry = sorted(set(documented) - set(expected))
+    drifted = sorted(
+        rule
+        for rule in documented.keys() & expected
+        if documented[rule] != expected[rule]
+    )
+    assert documented == expected, (
+        f"README-only: {missing_in_registry}; "
+        f"registry-only: {missing_in_readme}; "
+        f"severity drift: {drifted}"
+    )
