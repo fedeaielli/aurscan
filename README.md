@@ -134,6 +134,12 @@ aurscan --explain R01
 aurscan --explain M01
 ```
 
+Print the version and exit:
+
+```bash
+aurscan --version
+```
+
 ## Example output
 
 ```text
@@ -166,6 +172,7 @@ Findings
 | `--no-cache` | Ignore the on-disk response cache. |
 | `--no-history` | Skip git history checks. |
 | `--explain RULE_ID` | Print the full description of a rule and exit. |
+| `--version` | Print the version and exit. Needs no package argument. |
 
 Exit codes:
 

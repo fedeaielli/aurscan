@@ -10,6 +10,7 @@ from typing import NoReturn
 import typer
 from rich.console import Console
 
+from aurscan import __version__
 from aurscan.cache import ResponseCache, default_cache_dir
 from aurscan.deps import (
     DEFAULT_DEPTH,
@@ -88,6 +89,9 @@ def scan(
         min=0,
         help="Maximum number of dependencies to scan",
     ),
+    version: bool = typer.Option(
+        False, "--version", help="Print the aurscan version and exit"
+    ),
     explain: str | None = typer.Option(
         None,
         "--explain",
@@ -96,6 +100,9 @@ def scan(
     ),
 ) -> None:
     """Fetch, parse, and analyse PACKAGE, then print a risk report."""
+    if version:
+        typer.echo(f"aurscan {__version__}")
+        raise _CommandExit(int(ExitCode.OK))
     if explain is not None:
         raise _CommandExit(_explain_rule(explain))
     if package is None:

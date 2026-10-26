@@ -12,6 +12,7 @@ import pytest
 import respx
 
 import aurscan.cli as cli
+from aurscan import __version__
 from aurscan.fetch import RPC_URL
 from aurscan.history import Commit
 from aurscan.models import ParseResult, Report
@@ -222,6 +223,13 @@ def test_unknown_option_exits_3(capsys: pytest.CaptureFixture[str]) -> None:
 def test_help_exits_0(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["--help"]) == 0
     assert "Usage" in capsys.readouterr().out
+
+
+@respx.mock
+def test_version_exits_0_without_network(capsys: pytest.CaptureFixture[str]) -> None:
+    # No route is mocked, so any HTTP request would raise instead of silently passing.
+    assert cli.main(["--version"]) == 0
+    assert capsys.readouterr().out == f"aurscan {__version__}\n"
 
 
 def test_explain_rule_exits_0(capsys: pytest.CaptureFixture[str]) -> None:
