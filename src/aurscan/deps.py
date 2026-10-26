@@ -18,7 +18,7 @@ from functools import partial
 from aurscan.cache import ResponseCache
 from aurscan.errors import AurscanError, InvalidPackageNameError
 from aurscan.fetch import fetch_meta_many
-from aurscan.models import PackageInfo, Report, Verdict
+from aurscan.models import PackageInfo, Report, Severity, Verdict
 from aurscan.pipeline import parse_package
 from aurscan.report import build_report
 from aurscan.rules import RuleContext, registry
@@ -61,6 +61,7 @@ def analyze_package(
     meta: PackageInfo,
     *,
     timeout: float = 10.0,
+    min_severity: Severity = Severity.INFO,
 ) -> Report:
     """Analyse one dependency using static and metadata rules only."""
     parse_result = parse_package(meta.name, timeout=timeout)
@@ -70,7 +71,12 @@ def analyze_package(
         meta=meta,
         cloned_files=tuple(parse_result.cloned_files),
     )
-    return build_report(meta, parse_result, registry.run_all(context))
+    return build_report(
+        meta,
+        parse_result,
+        registry.run_all(context),
+        min_severity=min_severity,
+    )
 
 
 def scan_dependencies(
@@ -80,6 +86,7 @@ def scan_dependencies(
     include_make: bool = False,
     max_deps: int = DEFAULT_MAX_DEPS,
     timeout: float = 10.0,
+    min_severity: Severity = Severity.INFO,
     cache: ResponseCache | None = None,
     sleep: SleepFunc | None = None,
     _fetch: FetchFunc | None = None,
@@ -99,7 +106,11 @@ def scan_dependencies(
 
     pause = sleep if sleep is not None else _sleep
     fetch = _fetch if _fetch is not None else partial(_fetch_meta, timeout=timeout, cache=cache)
-    analyze = _analyze if _analyze is not None else partial(analyze_package, timeout=timeout)
+    analyze = (
+        _analyze
+        if _analyze is not None
+        else partial(analyze_package, timeout=timeout, min_severity=min_severity)
+    )
 
     visited: set[str] = {root_report.package.name}
     scanned: list[Report] = []
