@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 from typing import NoReturn
 
 import typer
@@ -18,11 +19,11 @@ from aurscan.deps import (
     MAX_DEPTH,
     scan_dependencies,
 )
-from aurscan.errors import AurscanError, ExitCode
+from aurscan.errors import AurscanError, ExitCode, LocalPathError
 from aurscan.fetch import fetch_meta
-from aurscan.history import diff_findings, maintainer_change_findings
-from aurscan.models import Severity, Verdict
-from aurscan.pipeline import parse_package_with_history
+from aurscan.history import Commit, diff_findings, maintainer_change_findings
+from aurscan.models import Finding, PackageInfo, ParseResult, Severity, Verdict
+from aurscan.pipeline import parse_local_directory, parse_package_with_history
 from aurscan.report import build_report, highest_verdict, render_human, render_json
 from aurscan.rules import RuleContext, registry
 from aurscan.scoring import load_scoring_config
@@ -46,6 +47,13 @@ _MIN_SEVERITY_OPTION = typer.Option(
     help="Hide findings below this severity (affects score, verdict and exit code)",
 )
 
+_LOCAL_OPTION = typer.Option(
+    None,
+    "--local",
+    metavar="PATH",
+    help="Scan a local directory containing a PKGBUILD (no network)",
+)
+
 
 class _CommandExit(Exception):
     """Carry an exit code past Click without colliding with its usage-error code 2."""
@@ -53,6 +61,46 @@ class _CommandExit(Exception):
     def __init__(self, code: int) -> None:
         super().__init__(code)
         self.code = code
+
+
+def _collect_findings(
+    parse_result: ParseResult,
+    commits: Sequence[Commit],
+    *,
+    info: PackageInfo,
+    meta: PackageInfo | None,
+) -> list[Finding]:
+    """Run the content rules, plus history rules when commits were read.
+
+    ``meta`` is passed separately so a local scan can keep synthetic metadata
+    for the report while silencing the AUR-only metadata rules.
+    """
+    context = RuleContext(
+        pkgbuild=parse_result.pkgbuild,
+        install_scripts=tuple(parse_result.install_scripts),
+        meta=meta,
+        cloned_files=tuple(parse_result.cloned_files),
+    )
+    findings = registry.run_all(context)
+    if commits:
+        findings.extend(diff_findings(commits, registry))
+        findings.extend(maintainer_change_findings(commits, info))
+    return findings
+
+
+def _local_package(parse_result: ParseResult, path: Path) -> PackageInfo:
+    """Build the synthetic package header for a local directory scan."""
+    pkgbuild = parse_result.pkgbuild
+    name = path.name
+    version = "unknown"
+    if pkgbuild is not None:
+        if pkgbuild.pkgname:
+            name = pkgbuild.pkgname[0]
+        if pkgbuild.pkgver and pkgbuild.pkgrel:
+            version = f"{pkgbuild.pkgver}-{pkgbuild.pkgrel}"
+        elif pkgbuild.pkgver:
+            version = pkgbuild.pkgver
+    return PackageInfo.local_stub(name, version=version)
 
 
 def _explain_rule(value: str) -> int:
@@ -72,6 +120,7 @@ def _explain_rule(value: str) -> int:
 @app.command()
 def scan(
     package: str | None = typer.Argument(None, help="AUR package name"),
+    local_path: Path | None = _LOCAL_OPTION,
     timeout: float = typer.Option(10.0, "--timeout", min=1.0, help="Network timeout in seconds"),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON instead of a table"),
     no_cache: bool = typer.Option(False, "--no-cache", help="Bypass the on-disk HTTP cache"),
@@ -97,7 +146,7 @@ def scan(
     ),
     min_severity: Severity = _MIN_SEVERITY_OPTION,
     version: bool = typer.Option(
-        False, "--version", help="Print the version and exit"
+        False, "--version", help="Print the aurscan version and exit"
     ),
     explain: str | None = typer.Option(
         None,
@@ -106,32 +155,38 @@ def scan(
         help="Print the full description of RULE_ID and exit",
     ),
 ) -> None:
-    """Fetch, parse, and analyse PACKAGE, then print a risk report."""
+    """Fetch or read PACKAGE / --local PATH, analyse it, and print a risk report."""
     if version:
         typer.echo(f"aurscan {__version__}")
         raise _CommandExit(int(ExitCode.OK))
     if explain is not None:
         raise _CommandExit(_explain_rule(explain))
-    if package is None:
-        typer.echo("aurscan: error: missing package name", err=True)
-        raise _CommandExit(int(ExitCode.ERROR))
     try:
-        name = validate_package_name(package)
-        cache = None if no_cache else ResponseCache(default_cache_dir())
-        info = fetch_meta(name, timeout=timeout, cache=cache)
-        parse_result, commits = parse_package_with_history(
-            name, timeout=timeout, include_history=not no_history
-        )
-        context = RuleContext(
-            pkgbuild=parse_result.pkgbuild,
-            install_scripts=tuple(parse_result.install_scripts),
-            meta=info,
-            cloned_files=tuple(parse_result.cloned_files),
-        )
-        findings = registry.run_all(context)
-        if commits:
-            findings.extend(diff_findings(commits, registry))
-            findings.extend(maintainer_change_findings(commits, info))
+        cache: ResponseCache | None = None
+        if local_path is not None:
+            if package is not None:
+                raise LocalPathError("--local cannot be combined with a package name")
+            if deps:
+                raise LocalPathError("--deps is not supported with --local")
+            parse_result = parse_local_directory(local_path)
+            parse_result.errors.append(
+                "local scan: AUR metadata and history are not available"
+            )
+            info = _local_package(parse_result, local_path)
+            findings = _collect_findings(parse_result, [], info=info, meta=None)
+        else:
+            if package is None:
+                typer.echo(
+                    "aurscan: error: missing package name or --local PATH", err=True
+                )
+                raise _CommandExit(int(ExitCode.ERROR))
+            name = validate_package_name(package)
+            cache = None if no_cache else ResponseCache(default_cache_dir())
+            info = fetch_meta(name, timeout=timeout, cache=cache)
+            parse_result, commits = parse_package_with_history(
+                name, timeout=timeout, include_history=not no_history
+            )
+            findings = _collect_findings(parse_result, commits, info=info, meta=info)
         config = load_scoring_config()
         report = build_report(
             info,
