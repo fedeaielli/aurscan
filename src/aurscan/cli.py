@@ -21,7 +21,7 @@ from aurscan.deps import (
 from aurscan.errors import AurscanError, ExitCode
 from aurscan.fetch import fetch_meta
 from aurscan.history import diff_findings, maintainer_change_findings
-from aurscan.models import Verdict
+from aurscan.models import Severity, Verdict
 from aurscan.pipeline import parse_package_with_history
 from aurscan.report import build_report, highest_verdict, render_human, render_json
 from aurscan.rules import RuleContext, registry
@@ -38,6 +38,13 @@ _VERDICT_EXIT_CODES: dict[Verdict, ExitCode] = {
     Verdict.REVIEW: ExitCode.REVIEW,
     Verdict.RISKY: ExitCode.RISKY,
 }
+
+# Hoisted so ruff's B008 does not flag a non-literal enum default.
+_MIN_SEVERITY_OPTION = typer.Option(
+    Severity.INFO,
+    "--min-severity",
+    help="Hide findings below this severity (affects score, verdict and exit code)",
+)
 
 
 class _CommandExit(Exception):
@@ -88,8 +95,9 @@ def scan(
         min=0,
         help="Maximum number of dependencies to scan",
     ),
+    min_severity: Severity = _MIN_SEVERITY_OPTION,
     version: bool = typer.Option(
-        False, "--version", help="Print the aurscan version and exit"
+        False, "--version", help="Print the version and exit"
     ),
     explain: str | None = typer.Option(
         None,
@@ -125,7 +133,13 @@ def scan(
             findings.extend(diff_findings(commits, registry))
             findings.extend(maintainer_change_findings(commits, info))
         config = load_scoring_config()
-        report = build_report(info, parse_result, findings, config=config)
+        report = build_report(
+            info,
+            parse_result,
+            findings,
+            config=config,
+            min_severity=min_severity,
+        )
         if deps:
             report.dependencies = scan_dependencies(
                 report,
@@ -133,6 +147,7 @@ def scan(
                 include_make=include_make,
                 max_deps=max_deps,
                 timeout=timeout,
+                min_severity=min_severity,
                 cache=cache,
             )
         if json_output:

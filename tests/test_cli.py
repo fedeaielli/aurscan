@@ -15,7 +15,7 @@ import aurscan.cli as cli
 from aurscan import __version__
 from aurscan.fetch import RPC_URL
 from aurscan.history import Commit
-from aurscan.models import ParseResult, Report
+from aurscan.models import ParseResult, Report, Severity
 from aurscan.parse import parse_install_script, parse_pkgbuild
 from aurscan.report import build_report
 from aurscan.rules import RuleContext, registry
@@ -25,6 +25,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 BENIGN = (FIXTURES / "benign" / "PKGBUILD").read_text(encoding="utf-8")
 PIPES = (FIXTURES / "pkgbuild" / "pipes.PKGBUILD").read_text(encoding="utf-8")
+SOURCES = (FIXTURES / "suspicious" / "sources.PKGBUILD").read_text(encoding="utf-8")
 REVIEW_PKGBUILD = """\
 pkgname=demo
 pkgver=1.0
@@ -165,6 +166,59 @@ def test_high_findings_exit_2(
     assert "Risk: RISKY" in out
     assert "R01" in out
     assert "[HIGH]" in out
+
+
+@respx.mock
+def test_min_severity_medium_hides_low_findings(
+    rpc_route: respx.Route,
+    set_parse: Callable[[ParseResult], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    set_parse(_parse_result(SOURCES))
+
+    assert cli.main(["demo", "--min-severity", "medium"]) == 1
+    out = capsys.readouterr().out
+    assert "[MEDIUM]" in out
+    assert "[LOW]" not in out
+
+
+@respx.mock
+def test_min_severity_filters_before_scoring(
+    rpc_route: respx.Route,
+    set_parse: Callable[[ParseResult], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    set_parse(_parse_result(SOURCES))
+
+    # Every SOURCES finding is medium or low, so HIGH leaves a clean report
+    # and the exit code drops from 1 (review) to 0 (ok).
+    assert cli.main(["demo", "--min-severity", "high"]) == 0
+    out = capsys.readouterr().out
+    assert "Risk: OK (0/100)" in out
+    assert "Findings" in out
+    assert "none" in out
+
+
+@respx.mock
+def test_min_severity_json_findings_and_score_agree(
+    rpc_route: respx.Route,
+    set_parse: Callable[[ParseResult], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    set_parse(_parse_result(SOURCES))
+
+    assert cli.main(["demo", "--min-severity", "high", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["findings"] == []
+    assert payload["score"] == 0
+    assert payload["verdict"] == "ok"
+
+
+def test_invalid_min_severity_is_a_usage_error(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert cli.main(["demo", "--min-severity", "bogus"]) == 3
+    assert "Invalid value" in capsys.readouterr().err
 
 
 @respx.mock
@@ -546,6 +600,27 @@ def test_dependency_options_are_forwarded(
     assert captured["include_make"] is True
     assert captured["max_deps"] == 7
     assert captured["timeout"] == 10.0
+
+
+@respx.mock
+def test_min_severity_is_forwarded_to_dependency_scans(
+    rpc_route: respx.Route,
+    set_parse: Callable[[ParseResult], None],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_parse(_parse_result(BENIGN))
+    captured: dict[str, object] = {}
+
+    def fake_scan(
+        _root: Report, _depth: int, **kwargs: object
+    ) -> list[Report]:
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(cli, "scan_dependencies", fake_scan)
+
+    assert cli.main(["demo", "--deps", "--min-severity", "high"]) == 0
+    assert captured["min_severity"] is Severity.HIGH
 
 
 @respx.mock

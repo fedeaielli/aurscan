@@ -20,7 +20,7 @@ from aurscan.deps import (
 )
 from aurscan.errors import FetchError
 from aurscan.fetch import RPC_URL
-from aurscan.models import PackageInfo, ParseResult, Report, Verdict
+from aurscan.models import PackageInfo, ParseResult, Report, Severity, Verdict
 from aurscan.parse import parse_pkgbuild
 from aurscan.report import build_report
 from aurscan.rules import RuleContext, registry
@@ -345,3 +345,71 @@ def test_analyze_package_runs_static_rules(
 
     assert report.verdict == Verdict.RISKY
     assert report.score >= 60
+
+
+def test_analyze_package_filters_below_min_severity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parsed = parse_pkgbuild(PIPES)
+
+    def fake_parse(name: str, *, timeout: float = 10.0) -> ParseResult:
+        return ParseResult(
+            pkgbuild=parsed.pkgbuild,
+            install_scripts=[],
+            parse_failed=False,
+            findings=list(parsed.findings),
+            errors=[],
+            cloned_files=["PKGBUILD"],
+        )
+
+    monkeypatch.setattr(deps, "parse_package", fake_parse)
+
+    report = analyze_package(
+        make_meta(name="evil"),
+        timeout=1.0,
+        min_severity=Severity.CRITICAL,
+    )
+
+    assert report.findings == []
+    assert report.score == 0
+    assert report.verdict == Verdict.OK
+
+
+def test_default_analyze_partial_forwards_min_severity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_analyze(
+        meta: PackageInfo,
+        *,
+        timeout: float = 10.0,
+        min_severity: Severity = Severity.INFO,
+    ) -> Report:
+        captured["timeout"] = timeout
+        captured["min_severity"] = min_severity
+        return Report(
+            package=meta,
+            findings=[],
+            score=0,
+            verdict=Verdict.OK,
+            errors=[],
+            dependencies=[],
+            dep_of=None,
+        )
+
+    monkeypatch.setattr(deps, "analyze_package", fake_analyze)
+    root = _report(make_meta(name="a", depends=["b"]))
+    metas = {"b": make_meta(name="b")}
+
+    result = scan_dependencies(
+        root,
+        1,
+        timeout=2.5,
+        min_severity=Severity.HIGH,
+        sleep=lambda _seconds: None,
+        _fetch=metas.get,
+    )
+
+    assert [item.package.name for item in result] == ["b"]
+    assert captured == {"timeout": 2.5, "min_severity": Severity.HIGH}

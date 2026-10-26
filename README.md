@@ -142,6 +142,12 @@ aurscan --version
 
 Run `aurscan` with no arguments to print the help text and exit `0`.
 
+Only report findings at or above a severity:
+
+```bash
+aurscan yay --min-severity medium
+```
+
 ## Example output
 
 ```text
@@ -171,6 +177,7 @@ Findings
 | `--depth N` | Dependency depth to scan, from `1` to `5`. |
 | `--include-make` | Include `makedepends` when scanning dependencies. |
 | `--max-deps N` | Maximum number of dependencies to scan. |
+| `--min-severity LEVEL` | Hide findings below `info`, `low`, `medium`, `high`, or `critical`; the score, verdict, and exit code follow the filtered set. |
 | `--no-cache` | Ignore the on-disk response cache. |
 | `--no-history` | Skip git history checks. |
 | `--explain RULE_ID` | Print the full description of a rule and exit. |
@@ -185,6 +192,8 @@ Exit codes:
 | `2` | `risky` |
 | `3` | error or invalid command line |
 
+`--min-severity` filters before scoring, so hiding findings can lower the exit code.
+
 ## How it works
 
 1. Fetch package metadata from the AUR RPC API.
@@ -197,6 +206,7 @@ Exit codes:
 The score is capped by severity, so a single high-severity finding cannot be
 hidden by many low-severity ones. Weights and thresholds live in
 [`config/scoring.yml`](config/scoring.yml).
+
 
 ## Rule catalogue
 

