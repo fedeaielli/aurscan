@@ -148,6 +148,13 @@ Only report findings at or above a severity:
 aurscan yay --min-severity medium
 ```
 
+Scan a local directory that already contains a `PKGBUILD`, without contacting
+the AUR or cloning anything:
+
+```bash
+aurscan --local ~/builds/foo
+```
+
 ## Example output
 
 ```text
@@ -171,6 +178,7 @@ Findings
 
 | Option | Meaning |
 | --- | --- |
+| `--local PATH` | Scan a local directory containing a `PKGBUILD`; no network, clone, or history. |
 | `--json` | Print a machine-readable report instead of the human report. |
 | `--timeout SECONDS` | Timeout for AUR requests and each clone attempt. |
 | `--deps` | Also scan AUR dependencies. |
@@ -207,6 +215,10 @@ The score is capped by severity, so a single high-severity finding cannot be
 hidden by many low-severity ones. Weights and thresholds live in
 [`config/scoring.yml`](config/scoring.yml).
 
+`--local` replaces steps 1–2: it reads the directory with the same safe,
+symlink-refusing file access and runs the content rules only. Metadata rules
+(`M02`–`M04`) and history rules (`M01`) are skipped because no AUR metadata or
+git history is available.
 
 ## Rule catalogue
 
@@ -258,6 +270,8 @@ Run `aurscan --explain RULE_ID` for the full description of any rule.
 - Architecture-specific variables such as `source_x86_64` and
   `sha256sums_x86_64` are tracked and expanded alongside the base arrays, but
   arbitrary computed variable names are not resolved.
+- `--local` cannot use AUR metadata, history, or `--deps`; the report shows
+  synthetic metadata and notes that those analyses are unavailable.
 - AUR metadata can be stale, and maintainer history is limited to the commits
   available from the shallow clone.
 - Rules are heuristics. Investigate every `risky` result and treat `ok` as

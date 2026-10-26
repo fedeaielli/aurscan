@@ -51,6 +51,26 @@ class PackageInfo(AurscanModel):
             return None
         return value.astimezone(UTC)
 
+    @classmethod
+    def local_stub(cls, name: str, *, version: str = "unknown") -> PackageInfo:
+        """Return synthetic metadata for a local scan without AUR lookups."""
+        now = datetime.now(UTC)
+        return cls(
+            name=name,
+            version=version,
+            maintainer=None,
+            submitter=None,
+            first_submitted=now,
+            last_modified=now,
+            num_votes=0,
+            popularity=0.0,
+            out_of_date=None,
+            url=None,
+            depends=[],
+            make_depends=[],
+            opt_depends=[],
+        )
+
 
 class Command(AurscanModel):
     name: str

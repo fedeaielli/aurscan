@@ -7,7 +7,7 @@ from pathlib import Path, PurePosixPath
 
 from aurscan.clone import DEFAULT_TIMEOUT_SECONDS, clone_package
 from aurscan.constants import INSTALL_SUFFIX, PKGBUILD_FILENAME
-from aurscan.errors import AurscanError, CloneResourceError
+from aurscan.errors import AurscanError, CloneResourceError, LocalPathError
 from aurscan.history import HISTORY_COMMITS, Commit, read_commits
 from aurscan.models import ParseResult
 from aurscan.parse import parse_install_script, parse_pkgbuild
@@ -71,13 +71,13 @@ def parse_package_with_history(
                 )
             except AurscanError as retry_exc:
                 return _clone_failure_result(name, retry_exc), []
-            result = _parse_clone_dir(name, retry_dir)
+            result = _parse_directory(retry_dir)
             result.errors.append(f"history skipped: {exc.message}")
             return result, []
         except AurscanError as exc:
             return _clone_failure_result(name, exc), []
 
-        result = _parse_clone_dir(name, clone_dir)
+        result = _parse_directory(clone_dir)
         if not include_history:
             return result, []
 
@@ -98,10 +98,25 @@ def _clone_failure_result(name: str, exc: AurscanError) -> ParseResult:
     )
 
 
-def _parse_clone_dir(name: str, clone_dir: Path) -> ParseResult:
-    """Parse the PKGBUILD and install scripts of an existing clone."""
+def parse_local_directory(path: Path) -> ParseResult:
+    """Parse a local PKGBUILD directory without network or git access.
+
+    A missing, unreadable, or non-directory path is fatal: unlike a failed clone
+    there is no AUR metadata to fall back on.
+    """
+    if not path.is_dir():
+        raise LocalPathError(f"not a directory: {path}")
+    result = _parse_directory(path)
+    if result.pkgbuild is None:
+        raise LocalPathError(f"could not read {PKGBUILD_FILENAME} from {path}")
+    return result
+
+
+def _parse_directory(path: Path) -> ParseResult:
+    """Parse the PKGBUILD and install scripts of an existing directory."""
+    name = path.name
     try:
-        pkgbuild_source = read_text_safe(clone_dir, PKGBUILD_FILENAME)
+        pkgbuild_source = read_text_safe(path, PKGBUILD_FILENAME)
     except AurscanError as exc:
         return _failed_result(
             f"Could not read {PKGBUILD_FILENAME} for {name} — "
@@ -119,12 +134,12 @@ def _parse_clone_dir(name: str, clone_dir: Path) -> ParseResult:
             "analysis may be incomplete"
         )
 
-    files = _list_files(clone_dir, errors)
-    cloned_files = _relative_files(clone_dir, files)
+    files = _list_files(path, errors)
+    cloned_files = _relative_files(path, files)
 
-    for relative in _install_candidates(result, files, clone_dir):
+    for relative in _install_candidates(result, files, path):
         try:
-            source = read_text_safe(clone_dir, relative)
+            source = read_text_safe(path, relative)
         except AurscanError as exc:
             errors.append(f"Could not read {relative} — skipped ({exc.message})")
             continue

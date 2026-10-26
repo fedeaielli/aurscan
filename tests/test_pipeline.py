@@ -11,9 +11,13 @@ import pytest
 import aurscan.deps as deps
 import aurscan.pipeline as pipeline
 from aurscan.clone import clone_package
-from aurscan.errors import CloneResourceError, InvalidPackageNameError
+from aurscan.errors import CloneResourceError, InvalidPackageNameError, LocalPathError
 from aurscan.models import ParseResult
-from aurscan.pipeline import parse_package, parse_package_with_history
+from aurscan.pipeline import (
+    parse_local_directory,
+    parse_package,
+    parse_package_with_history,
+)
 from tests.rules_utils import make_meta
 
 
@@ -340,6 +344,36 @@ def test_parse_package_with_history_cleans_temporary_directory_on_error(
 
     assert depths == [11, 1]
     assert list(sandbox.iterdir()) == []
+
+
+def test_parse_local_directory_reads_pkgbuild_and_install_scripts(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "PKGBUILD").write_text(PKGBUILD, encoding="utf-8")
+    (tmp_path / "demo.install").write_text(INSTALL, encoding="utf-8")
+
+    result = parse_local_directory(tmp_path)
+
+    assert result.errors == []
+    assert result.pkgbuild is not None
+    assert result.pkgbuild.pkgname == ["demo"]
+    assert [script.filename for script in result.install_scripts] == ["demo.install"]
+    assert set(result.cloned_files) == {"PKGBUILD", "demo.install"}
+
+
+def test_parse_local_directory_rejects_non_directories(tmp_path: Path) -> None:
+    with pytest.raises(LocalPathError, match="not a directory"):
+        parse_local_directory(tmp_path / "missing")
+
+    file_path = tmp_path / "PKGBUILD"
+    file_path.write_text(PKGBUILD, encoding="utf-8")
+    with pytest.raises(LocalPathError, match="not a directory"):
+        parse_local_directory(file_path)
+
+
+def test_parse_local_directory_requires_a_pkgbuild(tmp_path: Path) -> None:
+    with pytest.raises(LocalPathError, match="could not read PKGBUILD"):
+        parse_local_directory(tmp_path)
 
 
 def test_dependency_analysis_uses_a_single_content_only_clone(

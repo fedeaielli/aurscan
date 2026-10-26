@@ -27,6 +27,10 @@ class InvalidPackageNameError(AurscanError):
     """The supplied package name is not a valid AUR name."""
 
 
+class LocalPathError(AurscanError):
+    """A local PKGBUILD directory is missing, unsafe, or unusable."""
+
+
 class FetchError(AurscanError):
     """AUR metadata could not be retrieved or decoded."""
 
