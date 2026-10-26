@@ -156,6 +156,92 @@ sha512sums_i686=('{strong}')
     assert pkgbuild.checksums_by_arch["i686"]["sha512sums"] == [strong]
 
 
+def test_parse_appends_scalar_assignments() -> None:
+    source = """\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+_base="https://example.invalid"
+_base+=/releases
+source=("$_base/demo.tar.gz")
+sha256sums=('SKIP')
+"""
+
+    result = parse_pkgbuild(source)
+
+    pkgbuild = result.pkgbuild
+    assert pkgbuild is not None
+    assert pkgbuild.variables["_base"] == "https://example.invalid/releases"
+    assert pkgbuild.source == ["https://example.invalid/releases/demo.tar.gz"]
+
+
+def test_parse_appends_array_assignments() -> None:
+    strong = "b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184"
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+source=("a.tar.gz")
+source+=("b.tar.gz")
+sha256sums=('{strong}')
+sha256sums+=('SKIP')
+source_x86_64=("c.tar.gz")
+source_x86_64+=("d.tar.gz")
+"""
+
+    result = parse_pkgbuild(source)
+
+    pkgbuild = result.pkgbuild
+    assert pkgbuild is not None
+    assert pkgbuild.source == ["a.tar.gz", "b.tar.gz"]
+    assert pkgbuild.variables["source"] == ["a.tar.gz", "b.tar.gz"]
+    assert pkgbuild.sha256sums == [strong, "SKIP"]
+    assert pkgbuild.sources_by_arch == {"x86_64": ["c.tar.gz", "d.tar.gz"]}
+
+
+def test_parse_appends_mixed_scalar_and_array_values() -> None:
+    source = """\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+_prefix="pre"
+_prefix+=("fix" "end")
+_items=("one" "two")
+_items+=three
+"""
+
+    result = parse_pkgbuild(source)
+
+    pkgbuild = result.pkgbuild
+    assert pkgbuild is not None
+    assert pkgbuild.variables["_prefix"] == ["prefix", "end"]
+    assert pkgbuild.variables["_items"] == ["one", "twothree"]
+
+
+def test_parse_appends_assignments_in_the_regex_fallback() -> None:
+    source = """\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+source=("a.tar.gz")
+source+=("b.tar.gz")
+if [ ; then
+  echo broken
+fi
+"""
+
+    result = parse_pkgbuild(source)
+
+    assert result.parse_failed is True
+    pkgbuild = result.pkgbuild
+    assert pkgbuild is not None
+    assert pkgbuild.source == ["a.tar.gz", "b.tar.gz"]
+
+
 def test_parse_leaves_unresolved_and_array_variables_unexpanded() -> None:
     source = """\
 pkgname=demo

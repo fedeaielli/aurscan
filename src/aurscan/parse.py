@@ -31,7 +31,7 @@ _COMMAND_NODES = frozenset({"command", "declaration_command"})
 _STRING_NODES = frozenset({"string", "raw_string"})
 
 _ASSIGNMENT_RE = re.compile(
-    r"^[ \t]*([A-Za-z_][A-Za-z0-9_]*)\+?=(.*)$",
+    r"^[ \t]*([A-Za-z_][A-Za-z0-9_]*)(\+?=)(.*)$",
     re.MULTILINE,
 )
 _FUNCTION_HEADER_RE = re.compile(
@@ -112,7 +112,12 @@ def _walk_tree(root: Node) -> _Analysis:
         if top_level and kind == "variable_assignment":
             name, value = _variable(node)
             if name:
-                analysis.variables[name] = value
+                _store_assignment(
+                    analysis.variables,
+                    name,
+                    value,
+                    append=_is_append(node),
+                )
         elif top_level and kind == "function_definition":
             name_node = node.child_by_field_name("name")
             if name_node is not None:
@@ -199,6 +204,40 @@ def _variable(node: Node) -> tuple[str, str | list[str]]:
     if value_node.type == "array":
         return name, [_element_text(child) for child in value_node.named_children]
     return name, _strip_quotes(_text(value_node))
+
+
+def _is_append(node: Node) -> bool:
+    """Return whether an assignment node uses the ``+=`` operator."""
+    return any(child.type == "+=" for child in node.children)
+
+
+def _store_assignment(
+    variables: dict[str, str | list[str]],
+    name: str,
+    value: str | list[str],
+    *,
+    append: bool,
+) -> None:
+    """Store an assignment, merging with the previous value when it appends."""
+    previous = variables.get(name)
+    variables[name] = (
+        _append_value(previous, value) if append and previous is not None else value
+    )
+
+
+def _append_value(
+    previous: str | list[str], value: str | list[str]
+) -> str | list[str]:
+    """Merge an appended value into the previous one using bash semantics."""
+    if isinstance(previous, list):
+        if isinstance(value, list):
+            return [*previous, *value]
+        if not previous:
+            return [value]
+        return [*previous[:-1], previous[-1] + value]
+    if isinstance(value, str):
+        return previous + value
+    return [previous + value[0], *value[1:]] if value else [previous]
 
 
 def _element_text(node: Node) -> str:
@@ -314,8 +353,13 @@ def _fallback_analysis(source: str) -> _Analysis:
     """Best-effort extraction used only when tree-sitter reports a syntax error."""
     analysis = _Analysis()
     for match in _ASSIGNMENT_RE.finditer(source):
-        name = match.group(1)
-        analysis.variables[name] = _fallback_value(match.group(2).strip())
+        name, operator, rest = match.groups()
+        _store_assignment(
+            analysis.variables,
+            name,
+            _fallback_value(rest.strip()),
+            append=operator == "+=",
+        )
     analysis.functions = _fallback_functions(source)
     return analysis
 

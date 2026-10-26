@@ -336,6 +336,30 @@ sha256sums_aarch64=('{STRONG}')
     ]
 
 
+def test_appended_sources_are_checked_by_r05_and_r06() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+url="https://example.invalid/demo"
+source=("https://example.invalid/a.tar.gz")
+source+=("http://example.invalid/b.tar.gz")
+sha256sums=('{STRONG}')
+sha256sums+=('SKIP')
+"""
+    findings = run_rules(source)
+
+    r05 = by_rule(findings, "R05")
+    assert [(finding.line, finding.severity) for finding in r05] == [
+        (7, Severity.MEDIUM)
+    ]
+
+    r06 = by_rule(findings, "R06")
+    assert len(r06) == 1
+    assert "SKIP" in r06[0].message
+
+
 def test_r04_and_r05_lines_come_from_raw_entries() -> None:
     findings = run_rules(SOURCES_VAR_FIXTURE.read_text(encoding="utf-8"))
 
