@@ -342,7 +342,7 @@ Commit messages follow
 
 ## License
 
-Copyright (C) 2026 faielli.
+Copyright (C) 2026 fedeaielli.
 
 aurscan is free software: you can redistribute it and/or modify it under the
 terms of the GNU General Public License as published by the Free Software
