@@ -6,6 +6,7 @@ import pytest
 
 from aurscan.models import Finding, Severity
 from aurscan.rules import (
+    SEVERITY_RANK,
     RuleContext,
     RuleRegistry,
     dedupe_findings,
@@ -58,16 +59,28 @@ def test_explain_covers_every_catalogue_rule() -> None:
     assert registry.explain("R99") is None
 
 
-def test_catalogue_covers_every_rule_in_id_order() -> None:
+def test_catalogue_lists_every_rule_by_severity() -> None:
     rows = registry.catalogue()
 
     ids = [row.rule_id for row in rows]
-    assert ids == sorted(ids)
     assert len(ids) == len(set(ids)) == 20
     assert set(ids) == ALL_RULE_IDS | {"M01"}
-    assert ids[0] == "M01"
-    assert ids[-1] == "R17"
     assert "PARSE-001" not in ids
+    assert rows[0].severity is Severity.HIGH
+    assert rows[-1].severity is Severity.LOW
+    assert [row.severity for row in rows] == sorted(
+        (row.severity for row in rows), key=SEVERITY_RANK.__getitem__, reverse=True
+    )
+    assert [row.rule_id for row in rows if row.severity is Severity.HIGH] == [
+        "R01",
+        "R02",
+        "R08",
+        "R09",
+        "R11",
+        "R13",
+        "R14",
+        "R17",
+    ]
 
     for row in rows:
         rule = registry.get(row.rule_id)

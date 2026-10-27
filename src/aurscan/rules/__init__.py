@@ -117,8 +117,9 @@ class RuleRegistry:
         return info[1] if info is not None else None
 
     def catalogue(self) -> list[RuleSummary]:
-        """Return every catalogued rule as a row, sorted by rule id.
+        """Return every catalogued rule as a row, most severe first.
 
+        Rows are sorted by severity (critical to info) and then by rule id.
         ``M01`` is implemented by the history module rather than the content
         registry, so its row comes from ``_EXTRA_RULE_DESCRIPTIONS``.
         ``PARSE-001`` is emitted by the parser and is not part of the catalogue.
@@ -139,7 +140,9 @@ class RuleRegistry:
             )
             for rule_id, (severity, description) in _EXTRA_RULE_DESCRIPTIONS.items()
         )
-        return sorted(rows, key=lambda row: row.rule_id)
+        return sorted(
+            rows, key=lambda row: (-SEVERITY_RANK[row.severity], row.rule_id)
+        )
 
     def run_all(self, ctx: RuleContext) -> list[Finding]:
         """Run every registered rule and return deduplicated, sorted findings."""
