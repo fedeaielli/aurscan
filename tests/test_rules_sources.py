@@ -1,14 +1,17 @@
-"""Per-rule tests for R04-R06."""
+"""Per-rule tests for R04-R06 and R21."""
 
 from __future__ import annotations
 
 from pathlib import Path
+
+import pytest
 
 from aurscan.models import Severity
 from aurscan.rules.common import same_domain
 from tests.rules_utils import by_rule, run_rules
 
 STRONG = "b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184"
+SOURCES_FIXTURE = Path(__file__).parent / "fixtures" / "suspicious" / "sources.PKGBUILD"
 SOURCES_VAR_FIXTURE = Path(__file__).parent / "fixtures" / "suspicious" / "sources_var.PKGBUILD"
 SOURCE_X86_64_FIXTURE = (
     Path(__file__).parent / "fixtures" / "suspicious" / "source_x86_64.PKGBUILD"
@@ -502,3 +505,126 @@ sha256sums_x86_64=('{STRONG}')
     findings = by_rule(run_rules(source), "R06")
 
     assert findings == []
+
+
+@pytest.mark.parametrize("scheme", ["git+", "hg+", "svn+", "bzr+"])
+def test_r21_flags_unpinned_vcs_sources(scheme: str) -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+source=("{scheme}https://example.invalid/repo")
+sha256sums=('SKIP')
+"""
+    findings = by_rule(run_rules(source), "R21")
+
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.LOW
+    assert findings[0].line == 5
+    assert scheme in findings[0].message
+
+
+@pytest.mark.parametrize(
+    "fragment",
+    ["#commit=abc123", "#tag=v1.0", "#revision=42", "#rev=42", "#commit=abc&tag=v1"],
+)
+def test_r21_accepts_pinned_vcs_sources(fragment: str) -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+source=("git+https://example.invalid/repo.git{fragment}")
+sha256sums=('SKIP')
+"""
+    assert by_rule(run_rules(source), "R21") == []
+
+
+@pytest.mark.parametrize("fragment", ["", "#branch=main", "#commit=", "#foo=bar", "#TAG=v1"])
+def test_r21_flags_sources_without_an_allowed_pin(fragment: str) -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+source=("git+https://example.invalid/repo.git{fragment}")
+sha256sums=('SKIP')
+"""
+    findings = by_rule(run_rules(source), "R21")
+
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.LOW
+
+
+def test_r21_accepts_a_pin_from_an_expanded_variable() -> None:
+    source = """\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+_commit=abc123
+source=("git+https://example.invalid/repo.git#commit=$_commit")
+sha256sums=('SKIP')
+"""
+    assert by_rule(run_rules(source), "R21") == []
+
+
+def test_r21_resolves_architecture_line_and_expanded_source() -> None:
+    source = """\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+_repo="git+https://example.invalid/repo.git"
+source_x86_64=("$_repo")
+sha256sums_x86_64=('SKIP')
+"""
+    findings = by_rule(run_rules(source), "R21")
+
+    assert len(findings) == 1
+    assert findings[0].line == 6
+    assert findings[0].snippet == "git+https://example.invalid/repo.git"
+
+
+def test_r21_handles_the_filename_prefix() -> None:
+    source = """\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+source=(
+  "repo::git+https://example.invalid/repo.git"
+  "pinned::git+https://example.invalid/pinned.git#tag=v1"
+)
+sha256sums=('SKIP' 'SKIP')
+"""
+    findings = by_rule(run_rules(source), "R21")
+
+    assert len(findings) == 1
+    assert findings[0].line == 6
+    assert findings[0].snippet == "repo::git+https://example.invalid/repo.git"
+
+
+def test_r21_ignores_non_vcs_sources() -> None:
+    source = f"""\
+pkgname=demo
+pkgver=1.0
+pkgrel=1
+arch=('x86_64')
+source=(
+  "https://example.invalid/archive.tar.gz"
+  "demo.patch"
+  "git://example.invalid/repo.git"
+)
+sha256sums=('{STRONG}' 'SKIP' 'SKIP')
+"""
+    assert by_rule(run_rules(source), "R21") == []
+
+
+def test_sources_fixture_reports_the_unpinned_vcs_source() -> None:
+    findings = run_rules(SOURCES_FIXTURE.read_text(encoding="utf-8"))
+
+    assert [(finding.line, finding.severity) for finding in by_rule(findings, "R21")] == [
+        (10, Severity.LOW)
+    ]
