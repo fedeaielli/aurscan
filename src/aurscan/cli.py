@@ -22,7 +22,14 @@ from aurscan.deps import (
 from aurscan.errors import AurscanError, ExitCode, LocalPathError
 from aurscan.fetch import fetch_meta
 from aurscan.history import Commit, diff_findings, maintainer_change_findings
-from aurscan.models import Finding, PackageInfo, ParseResult, Severity, Verdict
+from aurscan.models import (
+    Finding,
+    PackageInfo,
+    ParseResult,
+    Report,
+    Severity,
+    Verdict,
+)
 from aurscan.pipeline import parse_local_directory, parse_package_with_history
 from aurscan.report import (
     build_report,
@@ -32,7 +39,7 @@ from aurscan.report import (
     render_rule_catalogue,
 )
 from aurscan.rules import RuleContext, registry
-from aurscan.scoring import load_scoring_config
+from aurscan.scoring import ScoringConfig, load_scoring_config
 from aurscan.validation import sanitize_text, validate_package_name
 
 app = typer.Typer(
@@ -59,6 +66,8 @@ _LOCAL_OPTION = typer.Option(
     metavar="PATH",
     help="Scan a local directory containing a PKGBUILD (no network)",
 )
+
+_PACKAGES_ARGUMENT = typer.Argument(None, help="AUR package names")
 
 
 class _CommandExit(Exception):
@@ -109,6 +118,47 @@ def _local_package(parse_result: ParseResult, path: Path) -> PackageInfo:
     return PackageInfo.local_stub(name, version=version)
 
 
+def _scan_remote(
+    name: str,
+    *,
+    config: ScoringConfig,
+    timeout: float,
+    no_history: bool,
+    min_severity: Severity,
+    cache: ResponseCache | None,
+) -> Report:
+    """Fetch, clone, parse, and score one AUR package."""
+    name = validate_package_name(name)
+    info = fetch_meta(name, timeout=timeout, cache=cache)
+    parse_result, commits = parse_package_with_history(
+        name, timeout=timeout, include_history=not no_history
+    )
+    findings = _collect_findings(parse_result, commits, info=info, meta=info)
+    return build_report(
+        info, parse_result, findings, config=config, min_severity=min_severity
+    )
+
+
+def _scan_local(
+    path: Path, *, config: ScoringConfig, min_severity: Severity
+) -> Report:
+    """Parse and score a local directory without network access."""
+    parse_result = parse_local_directory(path)
+    parse_result.errors.append(
+        "local scan: AUR metadata and history are not available"
+    )
+    info = _local_package(parse_result, path)
+    findings = _collect_findings(parse_result, [], info=info, meta=None)
+    return build_report(
+        info, parse_result, findings, config=config, min_severity=min_severity
+    )
+
+
+def _error_message(exc: AurscanError) -> str:
+    """Return a failure message that is safe to print or serialize."""
+    return sanitize_text(str(exc), max_length=500) or exc.__class__.__name__
+
+
 def _explain_rule(value: str) -> int:
     """Print a rule's full description and return an exit code."""
     rule_id = value.strip().upper()
@@ -125,7 +175,7 @@ def _explain_rule(value: str) -> int:
 
 @app.command()
 def scan(
-    package: str | None = typer.Argument(None, help="AUR package name"),
+    packages: list[str] | None = _PACKAGES_ARGUMENT,
     local_path: Path | None = _LOCAL_OPTION,
     timeout: float = typer.Option(10.0, "--timeout", min=1.0, help="Network timeout in seconds"),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON instead of a table"),
@@ -166,7 +216,7 @@ def scan(
         help="Print the full description of RULE_ID and exit",
     ),
 ) -> None:
-    """Fetch or read PACKAGE / --local PATH, analyse it, and print a risk report."""
+    """Fetch or read PACKAGES / --local PATH, analyse each, and print a report per package."""
     if version:
         typer.echo(f"aurscan {__version__}")
         raise _CommandExit(int(ExitCode.OK))
@@ -176,62 +226,91 @@ def scan(
     if explain is not None:
         raise _CommandExit(_explain_rule(explain))
     try:
-        cache: ResponseCache | None = None
+        names = list(packages or [])
         if local_path is not None:
             local_path = local_path.resolve()
-            if package is not None:
+            if names:
                 raise LocalPathError("--local cannot be combined with a package name")
             if deps:
                 raise LocalPathError("--deps is not supported with --local")
-            parse_result = parse_local_directory(local_path)
-            parse_result.errors.append(
-                "local scan: AUR metadata and history are not available"
+        elif not names:
+            typer.echo(
+                "aurscan: error: missing package name or --local PATH", err=True
             )
-            info = _local_package(parse_result, local_path)
-            findings = _collect_findings(parse_result, [], info=info, meta=None)
-        else:
-            if package is None:
-                typer.echo(
-                    "aurscan: error: missing package name or --local PATH", err=True
-                )
-                raise _CommandExit(int(ExitCode.ERROR))
-            name = validate_package_name(package)
-            cache = None if no_cache else ResponseCache(default_cache_dir())
-            info = fetch_meta(name, timeout=timeout, cache=cache)
-            parse_result, commits = parse_package_with_history(
-                name, timeout=timeout, include_history=not no_history
-            )
-            findings = _collect_findings(parse_result, commits, info=info, meta=info)
+            raise _CommandExit(int(ExitCode.ERROR))
+
         config = load_scoring_config()
-        report = build_report(
-            info,
-            parse_result,
-            findings,
-            config=config,
-            min_severity=min_severity,
+        cache: ResponseCache | None = (
+            None if no_cache else ResponseCache(default_cache_dir())
         )
-        if deps:
-            report.dependencies = scan_dependencies(
-                report,
-                depth,
-                include_make=include_make,
-                max_deps=max_deps,
-                timeout=timeout,
-                min_severity=min_severity,
-                cache=cache,
-            )
-        if json_output:
-            typer.echo(render_json(report))
+        results: list[tuple[str, Report | str]] = []
+        exit_code = int(ExitCode.OK)
+
+        if local_path is not None:
+            report = _scan_local(local_path, config=config, min_severity=min_severity)
+            results.append((str(local_path), report))
+            exit_code = int(_VERDICT_EXIT_CODES[highest_verdict(report)])
         else:
-            render_human(
-                report,
-                Console(),
-                config=config,
-                local_path=local_path,
-            )
-        raise _CommandExit(int(_VERDICT_EXIT_CODES[highest_verdict(report)]))
+            for name in names:
+                label = sanitize_text(name, max_length=255) or "?"
+                try:
+                    report = _scan_remote(
+                        name,
+                        config=config,
+                        timeout=timeout,
+                        no_history=no_history,
+                        min_severity=min_severity,
+                        cache=cache,
+                    )
+                    if deps:
+                        # shortcut: each root gets its own dependency walk, so a
+                        # dependency shared by two roots is scanned twice; share
+                        # the visited set across roots if that becomes slow.
+                        report.dependencies = scan_dependencies(
+                            report,
+                            depth,
+                            include_make=include_make,
+                            max_deps=max_deps,
+                            timeout=timeout,
+                            min_severity=min_severity,
+                            cache=cache,
+                        )
+                except AurscanError as exc:
+                    message = _error_message(exc)
+                    if not json_output:
+                        typer.echo(f"aurscan: error: {label}: {message}", err=True)
+                    results.append((label, message))
+                    exit_code = int(ExitCode.ERROR)
+                    continue
+                results.append((label, report))
+                exit_code = max(
+                    exit_code, int(_VERDICT_EXIT_CODES[highest_verdict(report)])
+                )
+
+        if json_output:
+            if len(results) == 1 and isinstance(results[0][1], Report):
+                typer.echo(render_json(results[0][1]))
+            elif len(results) == 1:
+                typer.echo(json.dumps({"error": results[0][1]}, ensure_ascii=False))
+            else:
+                payload = [
+                    outcome.model_dump(mode="json")
+                    if isinstance(outcome, Report)
+                    else {"package": name, "error": outcome}
+                    for name, outcome in results
+                ]
+                typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            console = Console()
+            for index, report in enumerate(
+                outcome for _name, outcome in results if isinstance(outcome, Report)
+            ):
+                if index:
+                    console.print()
+                render_human(report, console, config=config, local_path=local_path)
+        raise _CommandExit(exit_code)
     except AurscanError as exc:
-        message = sanitize_text(str(exc), max_length=500) or exc.__class__.__name__
+        message = _error_message(exc)
         if json_output:
             typer.echo(json.dumps({"error": message}, ensure_ascii=False))
         else:
