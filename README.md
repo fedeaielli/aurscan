@@ -37,7 +37,7 @@ a plain-English finding for every rule that fires.
   tree-sitter; never sources or executes them.
 - **Architecture-aware** — tracks `source_x86_64`, `sha256sums_x86_64`, and
   other architecture-specific variables.
-- **21 rules** covering downloads, obfuscation, persistence, permissions,
+- **22 rules** covering downloads, obfuscation, persistence, permissions,
   sensitive paths, checksum coverage, and package metadata.
 - **Weighted score** with `ok`, `review`, and `risky` verdicts.
 - **Human and JSON output** — use it interactively or pipe it into CI.
@@ -257,6 +257,7 @@ synthetic package block.
 | `R15` | medium | `install=` declared in the PKGBUILD but missing from the clone. |
 | `R17` | high | `install -m` that sets the setuid or setgid bit (plain modes like `0755` are not flagged). |
 | `R18` | medium | `curl`/`wget` TLS certificate verification disabled in a build function. |
+| `R21` | low | VCS source without a pinned revision (`#commit=`, `#tag=`, `#revision=`, `#rev=`). |
 
 </details>
 

@@ -1,4 +1,4 @@
-"""R04-R06: source provenance, transport security, and checksum coverage."""
+"""R04-R06, R21: source provenance, transport, checksums, and VCS pinning."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from aurscan.rules.common import (
     finding,
     host_of,
     is_ip_host,
+    is_unpinned_vcs_source,
     is_user_content_host,
     is_vcs_source,
     line_of,
@@ -186,6 +187,39 @@ def r06_checksum_coverage(ctx: RuleContext) -> list[Finding]:
             snippet=checksum,
         )
     ]
+
+
+@register("R21", Severity.LOW)
+def r21_unpinned_vcs_source(ctx: RuleContext) -> list[Finding]:
+    """Flag VCS sources that are not pinned to a revision.
+
+    Only ``git+``, ``hg+``, ``svn+`` and ``bzr+`` sources are checked. A
+    ``#commit=``, ``#tag=``, ``#revision=`` or ``#rev=`` fragment with a
+    non-empty value pins the source; branch-only fragments such as
+    ``#branch=main`` do not. Sources come from the expanded
+    ``source_groups()`` output, while the reported line comes from the raw
+    source entry.
+    """
+    pkgbuild = ctx.pkgbuild
+    if pkgbuild is None:
+        return []
+
+    findings: list[Finding] = []
+    for group in source_groups(pkgbuild):
+        for index, source in enumerate(group.sources):
+            if not is_unpinned_vcs_source(source):
+                continue
+            findings.append(
+                finding(
+                    "R21",
+                    Severity.LOW,
+                    f"VCS source is not pinned to a revision: {source}",
+                    PKGBUILD_FILENAME,
+                    line=_source_line(pkgbuild, group, index),
+                    snippet=source,
+                )
+            )
+    return findings
 
 
 def _source_line(pkgbuild: Pkgbuild, group: SourceGroup, index: int) -> int | None:

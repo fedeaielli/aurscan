@@ -56,6 +56,10 @@ WRAPPER_CMDS = frozenset(
 
 VCS_SCHEMES = ("bzr+", "bzr://", "git+", "git://", "hg+", "hg://", "svn+", "svn://")
 
+# Only makepkg's ``scheme+`` forms identify a version-control source. The
+# protocol-only forms above are handled by R04-R06 but are not pinned by R21.
+PINNABLE_VCS_SCHEMES = ("git+", "hg+", "svn+", "bzr+")
+
 # Hosts that serve user-supplied content and must never be trusted as a source
 # for a package, even when they happen to match the upstream project domain.
 USER_CONTENT_HOSTS = frozenset(
@@ -100,6 +104,7 @@ _REDIRECT_RE = re.compile(
 )
 _HEX_ESCAPE_RUN_RE = re.compile(r"(?:\\x[0-9A-Fa-f]{2}){8,}")
 _PRINTF_ESCAPE_RE = re.compile(r"\\(?:x[0-9A-Fa-f]{2}|[0-7]{1,3})")
+_PINNED_REVISION_RE = re.compile(r"(?:^|&)(?:commit|tag|revision|rev)=[^&]+")
 
 
 def finding(
@@ -250,6 +255,20 @@ def source_url(source: str) -> str:
 def is_vcs_source(source: str) -> bool:
     """Return whether a source entry points at a version-control repository."""
     return source_url(source).strip().lower().startswith(VCS_SCHEMES)
+
+
+def is_unpinned_vcs_source(source: str) -> bool:
+    """Return whether a VCS source lacks an allowed revision pin.
+
+    Only ``git+``, ``hg+``, ``svn+`` and ``bzr+`` sources are considered. The
+    fragment must carry a non-empty ``commit=``, ``tag=``, ``revision=`` or
+    ``rev=`` value; branch-only fragments such as ``#branch=main`` do not pin.
+    """
+    url = source_url(source).strip()
+    if not url.lower().startswith(PINNABLE_VCS_SCHEMES):
+        return False
+    _base, _separator, fragment = url.partition("#")
+    return _PINNED_REVISION_RE.search(fragment) is None
 
 
 def host_of(url: str) -> str | None:
