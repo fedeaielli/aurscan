@@ -24,7 +24,13 @@ from aurscan.fetch import fetch_meta
 from aurscan.history import Commit, diff_findings, maintainer_change_findings
 from aurscan.models import Finding, PackageInfo, ParseResult, Severity, Verdict
 from aurscan.pipeline import parse_local_directory, parse_package_with_history
-from aurscan.report import build_report, highest_verdict, render_human, render_json
+from aurscan.report import (
+    build_report,
+    highest_verdict,
+    render_human,
+    render_json,
+    render_rule_catalogue,
+)
 from aurscan.rules import RuleContext, registry
 from aurscan.scoring import load_scoring_config
 from aurscan.validation import sanitize_text, validate_package_name
@@ -148,6 +154,11 @@ def scan(
     version: bool = typer.Option(
         False, "--version", help="Print the aurscan version and exit"
     ),
+    rules: bool = typer.Option(
+        False,
+        "--rules",
+        help="List every rule with its severity and summary, then exit",
+    ),
     explain: str | None = typer.Option(
         None,
         "--explain",
@@ -158,6 +169,9 @@ def scan(
     """Fetch or read PACKAGE / --local PATH, analyse it, and print a risk report."""
     if version:
         typer.echo(f"aurscan {__version__}")
+        raise _CommandExit(int(ExitCode.OK))
+    if rules:
+        render_rule_catalogue(registry.catalogue(), Console())
         raise _CommandExit(int(ExitCode.OK))
     if explain is not None:
         raise _CommandExit(_explain_rule(explain))

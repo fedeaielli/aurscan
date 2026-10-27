@@ -13,7 +13,12 @@ from rich.table import Table
 from rich.text import Text
 
 from aurscan.models import Finding, PackageInfo, ParseResult, Report, Severity, Verdict
-from aurscan.rules import SEVERITY_RANK, dedupe_findings, sort_findings
+from aurscan.rules import (
+    SEVERITY_RANK,
+    RuleSummary,
+    dedupe_findings,
+    sort_findings,
+)
 from aurscan.scoring import ScoringConfig, score
 from aurscan.validation import sanitize_text
 
@@ -134,6 +139,22 @@ def render_human(
 def render_json(report: Report) -> str:
     """Return the report as machine-readable JSON."""
     return json.dumps(report.model_dump(mode="json"), indent=2, ensure_ascii=False)
+
+
+def render_rule_catalogue(rows: Sequence[RuleSummary], console: Console) -> None:
+    """Print the rule catalogue as an id/severity/description table."""
+    console.print(Text(f"Rules ({len(rows)})", style="bold"))
+    table = Table(box=None, pad_edge=False)
+    table.add_column("id", no_wrap=True)
+    table.add_column("severity", no_wrap=True)
+    table.add_column("description")
+    for row in rows:
+        table.add_row(
+            Text(row.rule_id),
+            Text(row.severity.value, style=_SEVERITY_STYLES[row.severity]),
+            Text(_safe(row.summary or "No description available.", 120)),
+        )
+    console.print(table)
 
 
 def _render_header(info: PackageInfo, console: Console) -> None:

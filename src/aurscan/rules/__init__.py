@@ -56,6 +56,15 @@ class AggregateRule:
     func: AggregateRuleFunc
 
 
+@dataclass(frozen=True)
+class RuleSummary:
+    """One catalogue row: rule id, severity, and a one-line summary."""
+
+    rule_id: str
+    severity: Severity
+    summary: str
+
+
 class RuleRegistry:
     """An ordered, append-only registry of rules."""
 
@@ -106,6 +115,31 @@ class RuleRegistry:
         """Return the full description for ``rule_id``, or ``None`` if unknown."""
         info = self.explain(rule_id)
         return info[1] if info is not None else None
+
+    def catalogue(self) -> list[RuleSummary]:
+        """Return every catalogued rule as a row, sorted by rule id.
+
+        ``M01`` is implemented by the history module rather than the content
+        registry, so its row comes from ``_EXTRA_RULE_DESCRIPTIONS``.
+        ``PARSE-001`` is emitted by the parser and is not part of the catalogue.
+        """
+        rows = [
+            RuleSummary(
+                rule_id=rule.rule_id,
+                severity=rule.severity,
+                summary=_one_line_summary(inspect.getdoc(rule.func) or ""),
+            )
+            for rule in self._rules.values()
+        ]
+        rows.extend(
+            RuleSummary(
+                rule_id=rule_id,
+                severity=severity,
+                summary=_one_line_summary(description),
+            )
+            for rule_id, (severity, description) in _EXTRA_RULE_DESCRIPTIONS.items()
+        )
+        return sorted(rows, key=lambda row: row.rule_id)
 
     def run_all(self, ctx: RuleContext) -> list[Finding]:
         """Run every registered rule and return deduplicated, sorted findings."""
@@ -176,6 +210,21 @@ def sort_findings(findings: Sequence[Finding]) -> list[Finding]:
 registry = RuleRegistry()
 register = registry.register
 register_aggregate = registry.register_aggregate
+
+
+def _one_line_summary(text: str) -> str:
+    """Return the first non-empty line of ``text``, cut to one sentence.
+
+    Docstrings use the first line as a summary and keep details in following
+    paragraphs. ``M01``'s catalogue entry is a single paragraph, so its first
+    sentence is used instead. RST double backticks are dropped because the
+    catalogue is rendered as plain table text.
+    """
+    line = next((raw.strip() for raw in text.splitlines() if raw.strip()), "")
+    line = line.replace("``", "")
+    if ". " in line:
+        line = line.split(". ", 1)[0] + "."
+    return line
 
 
 _EXTRA_RULE_DESCRIPTIONS: dict[str, tuple[Severity, str]] = {

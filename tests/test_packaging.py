@@ -74,6 +74,7 @@ def test_readme_documents_install_usage_limits_and_rules() -> None:
     assert "pacman -S uv" in text
     assert "uv tool install aurscan" in text
     assert "aurscan --explain R01" in text
+    assert "aurscan --rules" in text
     assert "GPL-3.0-or-later" in text
 
 
