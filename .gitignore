@@ -4,6 +4,7 @@
 /AGENTS.md
 /aurscan-project-plan.md
 /STATUS.md
+/.codegraph/
 
 __pycache__/
 *.py[cod]
