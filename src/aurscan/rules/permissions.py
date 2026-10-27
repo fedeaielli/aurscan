@@ -1,4 +1,4 @@
-"""R09-R10, R17: setuid/setgid bits and writes outside ``$pkgdir``."""
+"""R09-R10, R17, R19: setuid/setgid bits, writes outside ``$pkgdir``, escalation."""
 
 from __future__ import annotations
 
@@ -117,6 +117,33 @@ def r17_install_privilege_bits(ctx: RuleContext) -> list[Finding]:
                 "R17",
                 severity,
                 f"install -m {description} in {function}()",
+                PKGBUILD_FILENAME,
+                line=command.line,
+                snippet=command.raw,
+            )
+        )
+    return findings
+
+
+@register("R19", Severity.HIGH)
+def r19_privilege_escalation(ctx: RuleContext) -> list[Finding]:
+    """Flag ``sudo`` and ``pkexec`` invocations inside build functions.
+
+    A PKGBUILD runs as the build user; escalating privileges during
+    ``prepare``, ``build``, ``package`` or ``package_*`` is never legitimate.
+    ``check`` and custom helper functions are not inspected, matching R07.
+    """
+    findings: list[Finding] = []
+    for function, command in iter_pkgbuild_commands(ctx.pkgbuild):
+        if function not in BUILD_FUNCTIONS and not is_package_function(function):
+            continue
+        if command.name not in {"sudo", "pkexec"}:
+            continue
+        findings.append(
+            finding(
+                "R19",
+                Severity.HIGH,
+                f"{command.name} escalates privileges in {function}()",
                 PKGBUILD_FILENAME,
                 line=command.line,
                 snippet=command.raw,

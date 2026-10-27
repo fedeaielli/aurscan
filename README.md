@@ -13,8 +13,8 @@ what a package is about to do.
 [![Arch Linux](https://img.shields.io/badge/arch-linux-1793d1?logo=archlinux&logoColor=white)](https://archlinux.org/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-> **Status:** early development. The rule catalogue and scoring model may
-> change between releases.
+> **Status:** stable. New rules and scoring adjustments may still be added in
+> minor releases.
 
 > [!WARNING]
 > `aurscan` is a heuristic scanner. It does not execute package code and cannot
@@ -273,6 +273,7 @@ as `{"package": "...", "error": "..."}`.
 | `R14` | high | Access to SSH/GPG/AWS keys, browser profiles, or crypto wallets. |
 | `R15` | medium | `install=` declared in the PKGBUILD but missing from the clone. |
 | `R17` | high | `install -m` that sets the setuid or setgid bit (plain modes like `0755` are not flagged). |
+| `R19` | high | `sudo`/`pkexec` privilege escalation in `prepare`, `build`, or `package`. |
 | `R18` | medium | `curl`/`wget` TLS certificate verification disabled in a build function. |
 | `R21` | low | VCS source without a pinned revision (`#commit=`, `#tag=`, `#revision=`, `#rev=`). |
 

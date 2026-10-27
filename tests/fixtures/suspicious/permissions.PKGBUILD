@@ -16,3 +16,11 @@ package() {
   cp demo /usr/local/bin/demo
   echo data > /etc/demo.conf
 }
+
+build() {
+  sudo make install
+}
+
+package_extra() {
+  pkexec install -Dm755 demo "$pkgdir/usr/bin/demo"
+}
