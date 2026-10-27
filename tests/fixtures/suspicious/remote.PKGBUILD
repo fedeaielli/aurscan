@@ -16,5 +16,5 @@ build() {
 }
 
 package() {
-  curl -O https://example.invalid/extra.tar.gz
+  curl -k -O https://example.invalid/extra.tar.gz
 }
