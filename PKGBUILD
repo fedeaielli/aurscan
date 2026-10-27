@@ -1,6 +1,6 @@
 # Maintainer: fedeaielli - https://github.com/fedeaielli
 pkgname=aurscan
-pkgver=0.1.0
+pkgver=1.0.0
 pkgrel=1
 pkgdesc="Static risk scanner for AUR packages"
 arch=('any')

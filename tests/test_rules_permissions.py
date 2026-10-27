@@ -1,4 +1,4 @@
-"""Per-rule tests for R09-R10, R17."""
+"""Per-rule tests for R09-R10, R17, R19."""
 
 from __future__ import annotations
 
@@ -191,3 +191,77 @@ package() {
 }
 """
     assert by_rule(run_rules(source), "R17") == []
+
+
+def test_r19_flags_sudo_and_pkexec_in_build_functions() -> None:
+    source = """\
+prepare() {
+  sudo make prepare
+}
+
+build() {
+  sudo make
+}
+
+package() {
+  pkexec install demo "$pkgdir/usr/bin/demo"
+}
+
+package_extra() {
+  sudo -u root true
+}
+"""
+    findings = by_rule(run_rules(source), "R19")
+
+    assert [(finding.line, finding.severity) for finding in findings] == [
+        (2, Severity.HIGH),
+        (6, Severity.HIGH),
+        (10, Severity.HIGH),
+        (14, Severity.HIGH),
+    ]
+    assert "pkexec escalates privileges in package()" in findings[2].message
+
+
+def test_r19_ignores_check_helpers_and_install_scripts() -> None:
+    source = """\
+check() {
+  sudo make check
+}
+
+_helper() {
+  pkexec true
+}
+"""
+    findings = run_rules(
+        source,
+        install_source="""\
+post_install() {
+  sudo true
+}
+""",
+    )
+
+    assert by_rule(findings, "R19") == []
+
+
+def test_r19_ignores_lookalikes() -> None:
+    source = """\
+package() {
+  doas true
+  su -
+  runuser -u root true
+  sudoedit /etc/demo.conf
+  echo sudo
+  SUDO=true
+}
+"""
+    assert by_rule(run_rules(source), "R19") == []
+
+
+def test_r19_emits_one_finding_per_line() -> None:
+    source = """\
+package() {
+  sudo a && sudo b
+}
+"""
+    assert len(by_rule(run_rules(source), "R19")) == 1

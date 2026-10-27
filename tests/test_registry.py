@@ -33,6 +33,7 @@ ALL_RULE_IDS = {
     "R15",
     "R17",
     "R18",
+    "R19",
     "R21",
     "M02",
     "M03",
@@ -65,7 +66,7 @@ def test_catalogue_lists_every_rule_by_severity() -> None:
     rows = registry.catalogue()
 
     ids = [row.rule_id for row in rows]
-    assert len(ids) == len(set(ids)) == 22
+    assert len(ids) == len(set(ids)) == 23
     assert set(ids) == ALL_RULE_IDS | {"M01"}
     assert "PARSE-001" not in ids
     assert rows[0].severity is Severity.HIGH
@@ -82,6 +83,7 @@ def test_catalogue_lists_every_rule_by_severity() -> None:
         "R13",
         "R14",
         "R17",
+        "R19",
     ]
 
     for row in rows:

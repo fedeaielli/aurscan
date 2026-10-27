@@ -1,6 +1,6 @@
 [project]
 name = "aurscan"
-version = "0.1.0"
+version = "1.0.0"
 description = "Static risk scanner for AUR packages"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -9,7 +9,7 @@ requires-python = ">=3.12"
 authors = [{ name = "faielli" }]
 keywords = ["aur", "archlinux", "pkgbuild", "security", "static-analysis"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: End Users/Desktop",
     "Intended Audience :: System Administrators",
