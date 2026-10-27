@@ -58,6 +58,41 @@ def test_explain_covers_every_catalogue_rule() -> None:
     assert registry.explain("R99") is None
 
 
+def test_catalogue_covers_every_rule_in_id_order() -> None:
+    rows = registry.catalogue()
+
+    ids = [row.rule_id for row in rows]
+    assert ids == sorted(ids)
+    assert len(ids) == len(set(ids)) == 20
+    assert set(ids) == ALL_RULE_IDS | {"M01"}
+    assert ids[0] == "M01"
+    assert ids[-1] == "R17"
+    assert "PARSE-001" not in ids
+
+    for row in rows:
+        rule = registry.get(row.rule_id)
+        if rule is not None:
+            assert row.severity is rule.severity
+
+
+def test_catalogue_summaries_are_one_line() -> None:
+    for row in registry.catalogue():
+        assert row.summary
+        assert "\n" not in row.summary
+        assert "``" not in row.summary
+        assert len(row.summary) <= 120
+        assert not row.summary.endswith("\u2026")
+
+
+def test_catalogue_m01_uses_the_first_sentence() -> None:
+    row = next(item for item in registry.catalogue() if item.rule_id == "M01")
+
+    assert row.severity is Severity.MEDIUM
+    assert row.summary == (
+        "Flag a recent git author change on a package that is currently orphaned."
+    )
+
+
 def test_findings_are_deduplicated_and_sorted() -> None:
     rules = RuleRegistry()
 

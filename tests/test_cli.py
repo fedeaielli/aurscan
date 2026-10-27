@@ -325,6 +325,39 @@ def test_explain_missing_value_is_a_usage_error(
     assert "requires an argument" in capsys.readouterr().err
 
 
+def test_rules_lists_the_catalogue_without_a_package(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # No route is mocked, so any HTTP request would raise instead of passing.
+    with respx.mock:
+        assert cli.main(["--rules"]) == 0
+    captured = capsys.readouterr()
+    assert f"Rules ({len(registry.catalogue())})" in captured.out
+    for header in ("id", "severity", "description"):
+        assert header in captured.out
+    for rule_id in ("M01", "R01", "R17"):
+        assert rule_id in captured.out
+    assert "Flag curl/wget output executed by a shell." in captured.out
+    assert captured.err == ""
+
+
+def test_rules_ignores_a_package_argument(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with respx.mock:
+        assert cli.main(["--rules", "demo"]) == 0
+    assert "R01" in capsys.readouterr().out
+
+
+def test_rules_prints_the_table_even_with_json(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert cli.main(["--rules", "--json"]) == 0
+    out = capsys.readouterr().out
+    assert "Rules (" in out
+    assert '"findings"' not in out
+
+
 def test_options_without_a_package_exit_3(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["--json"]) == 3
     assert "missing package name" in capsys.readouterr().err

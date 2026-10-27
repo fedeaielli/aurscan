@@ -134,6 +134,12 @@ aurscan --explain R01
 aurscan --explain M01
 ```
 
+List every rule with its severity and a one-line summary:
+
+```bash
+aurscan --rules
+```
+
 Print the version and exit:
 
 ```bash
@@ -189,6 +195,7 @@ Findings
 | `--no-cache` | Ignore the on-disk response cache. |
 | `--no-history` | Skip git history checks. |
 | `--explain RULE_ID` | Print the full description of a rule and exit. |
+| `--rules` | List every rule with its severity and a one-line summary and exit. Needs no package argument. |
 | `--version` | Print the version and exit. Needs no package argument. |
 
 Exit codes:
