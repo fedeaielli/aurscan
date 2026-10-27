@@ -115,6 +115,16 @@ Scan a package:
 aurscan yay
 ```
 
+Scan several packages in one run:
+
+```bash
+aurscan yay paru yay-bin
+```
+
+Each package gets its own report, separated by a blank line. The exit code is the
+highest verdict of all the scanned packages, and a package that cannot be
+analysed does not stop the rest.
+
 Scan a package and print JSON:
 
 ```bash
@@ -208,6 +218,8 @@ Exit codes:
 | `3` | error or invalid command line |
 
 `--min-severity` filters before scoring, so hiding findings can lower the exit code.
+With several packages the exit code is the highest of all reports; an error in any
+package exits `3`.
 
 ## How it works
 
@@ -228,6 +240,11 @@ symlink-refusing file access and runs the content rules only. Metadata rules
 git history is available. The human report replaces the metadata table with a
 `Local scan` block showing the resolved directory; the JSON report keeps the
 synthetic package block.
+
+The human report is printed once per package, separated by a blank line. `--json`
+prints a single report object for one package and an array of reports, in argument
+order, for two or more. A package that could not be scanned appears in that array
+as `{"package": "...", "error": "..."}`.
 
 ## Rule catalogue
 

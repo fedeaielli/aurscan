@@ -703,3 +703,134 @@ def test_dependency_errors_are_rendered(
     assert "Dependency notes" in out
     assert "broken: could not clone broken: timeout" in out
 
+
+def _rpc_by_name(make_package: Callable[..., dict[str, Any]]) -> respx.Route:
+    """Serve the RPC result whose name matches the requested ``arg[]``."""
+
+    def route(request: httpx.Request) -> httpx.Response:
+        name = request.url.params.get_list("arg[]")[0]
+        return httpx.Response(200, json={"results": [make_package(Name=name)]})
+
+    return respx.get(url__startswith=RPC_URL).mock(side_effect=route)
+
+
+def _parse_by_name(
+    monkeypatch: pytest.MonkeyPatch, sources: dict[str, str]
+) -> None:
+    """Return the PKGBUILD registered for the requested package name."""
+
+    def fake(
+        name: str, *, include_history: bool = True, **_kwargs: object
+    ) -> tuple[ParseResult, list[Commit]]:
+        return _parse_result(sources[name]), []
+
+    monkeypatch.setattr(cli, "parse_package_with_history", fake)
+
+
+@respx.mock
+def test_each_package_gets_its_own_report(
+    make_package: Callable[..., dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _rpc_by_name(make_package)
+    _parse_by_name(monkeypatch, {"alpha": BENIGN, "beta": BENIGN})
+
+    assert cli.main(["alpha", "beta"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    headers = [index for index, line in enumerate(lines) if line.startswith("aurscan:")]
+    assert len(headers) == 2
+    assert lines[headers[0]].startswith("aurscan: alpha")
+    assert lines[headers[1]].startswith("aurscan: beta")
+    assert lines[headers[1] - 1] == ""
+
+
+@respx.mock
+def test_exit_code_is_the_highest_verdict_of_all_packages(
+    make_package: Callable[..., dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _rpc_by_name(make_package)
+    _parse_by_name(monkeypatch, {"alpha": PIPES, "beta": BENIGN})
+
+    # The risky package comes first: the exit code is not simply the last verdict.
+    assert cli.main(["alpha", "beta"]) == 2
+
+
+@respx.mock
+def test_multiple_packages_json_is_an_array(
+    make_package: Callable[..., dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _rpc_by_name(make_package)
+    _parse_by_name(monkeypatch, {"alpha": BENIGN, "beta": REVIEW_PKGBUILD})
+
+    assert cli.main(["alpha", "beta", "--json"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert [item["package"]["name"] for item in payload] == ["alpha", "beta"]
+    assert [item["verdict"] for item in payload] == ["ok", "review"]
+
+
+@respx.mock
+def test_a_failed_package_does_not_stop_the_rest(
+    make_package: Callable[..., dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def route(request: httpx.Request) -> httpx.Response:
+        name = request.url.params.get_list("arg[]")[0]
+        if name == "broken":
+            return httpx.Response(404)
+        return httpx.Response(200, json={"results": [make_package(Name=name)]})
+
+    respx.get(url__startswith=RPC_URL).mock(side_effect=route)
+    _parse_by_name(monkeypatch, {"alpha": BENIGN})
+
+    assert cli.main(["broken", "alpha"]) == 3
+    captured = capsys.readouterr()
+    assert "aurscan: error: broken: " in captured.err
+    assert "HTTP 404" in captured.err
+    assert "aurscan: alpha" in captured.out
+
+
+@respx.mock
+def test_a_failed_package_in_multi_json_is_an_error_entry(
+    make_package: Callable[..., dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def route(request: httpx.Request) -> httpx.Response:
+        name = request.url.params.get_list("arg[]")[0]
+        if name == "broken":
+            return httpx.Response(404)
+        return httpx.Response(200, json={"results": [make_package(Name=name)]})
+
+    respx.get(url__startswith=RPC_URL).mock(side_effect=route)
+    _parse_by_name(monkeypatch, {"alpha": BENIGN})
+
+    assert cli.main(["broken", "alpha", "--json"]) == 3
+    payload = json.loads(capsys.readouterr().out)
+    assert payload[0]["package"] == "broken"
+    assert "HTTP 404" in payload[0]["error"]
+    assert payload[1]["package"]["name"] == "alpha"
+
+
+@respx.mock
+def test_dependencies_are_scanned_for_every_package(
+    make_package: Callable[..., dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _rpc_by_name(make_package)
+    _parse_by_name(monkeypatch, {"alpha": BENIGN, "beta": BENIGN})
+    roots: list[str] = []
+
+    def fake_scan(root: Report, _depth: int, **_kwargs: object) -> list[Report]:
+        roots.append(root.package.name)
+        return []
+
+    monkeypatch.setattr(cli, "scan_dependencies", fake_scan)
+
+    assert cli.main(["alpha", "beta", "--deps"]) == 0
+    assert roots == ["alpha", "beta"]
+

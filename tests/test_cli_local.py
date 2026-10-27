@@ -124,6 +124,14 @@ def test_local_conflicts_with_package_argument(
     assert "cannot be combined" in capsys.readouterr().err
 
 
+def test_local_rejects_multiple_package_arguments(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert cli.main(["demo", "other", "--local", str(tmp_path)]) == 3
+    assert "cannot be combined" in capsys.readouterr().err
+
+
 def test_local_rejects_dependency_scanning(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
