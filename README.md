@@ -60,7 +60,7 @@ sudo pacman -S uv
 Then clone and install the command from the checkout:
 
 ```bash
-git clone https://github.com/faielli/aurscan.git
+git clone https://github.com/fedeaielli/aurscan.git
 cd aurscan
 uv tool install .
 ```
